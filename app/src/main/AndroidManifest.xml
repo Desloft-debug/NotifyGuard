@@ -37,17 +37,6 @@
             </intent-filter>
         </service>
 
-        <!-- Опционально: гасит уведомление ДО показа, чтобы не мигал баннер.
-             Работает, только если приложение выбрано ассистентом уведомлений. -->
-        <service
-            android:name=".GuardAssistantService"
-            android:exported="true"
-            android:label="@string/assistant_label"
-            android:permission="android.permission.BIND_NOTIFICATION_ASSISTANT_SERVICE">
-            <intent-filter>
-                <action android:name="android.service.notification.NotificationAssistantService" />
-            </intent-filter>
-        </service>
 
         <!-- Приглушает звонки не из контактов -->
         <service
