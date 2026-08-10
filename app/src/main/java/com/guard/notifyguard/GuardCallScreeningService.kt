@@ -4,9 +4,8 @@ import android.telecom.Call
 import android.telecom.CallScreeningService
 
 /**
- * Звонок с номера, которого нет в контактах, проходит беззвучно:
- * без рингтона и без вибрации. Звонок не сбрасывается и остаётся
- * в журнале вызовов — пропущенный номер видно как обычно.
+ * Звонок с номера вне контактов проходит беззвучно.
+ * Звонок не сбрасывается и остаётся в журнале вызовов.
  */
 class GuardCallScreeningService : CallScreeningService() {
 
@@ -17,6 +16,7 @@ class GuardCallScreeningService : CallScreeningService() {
             respondToCall(callDetails, allow)
             return
         }
+
         val prefs = Prefs(this)
         if (!prefs.silenceUnknownCalls) {
             respondToCall(callDetails, allow)
@@ -30,12 +30,21 @@ class GuardCallScreeningService : CallScreeningService() {
         }
 
         val silenced = CallResponse.Builder()
-            .setSilenceCall(true)      // без звука и вибрации
-            .setRejectCall(false)      // звонок не сбрасываем
+            .setSilenceCall(true)
+            .setRejectCall(false)
             .setDisallowCall(false)
-            .setSkipCallLog(false)     // остаётся в журнале вызовов
-            .setSkipNotification(false) // пропущенный виден в шторке
+            .setSkipCallLog(false)
+            .setSkipNotification(false)
             .build()
         respondToCall(callDetails, silenced)
+
+        GuardLog.addCall(
+            this,
+            CallEntry(
+                number = number ?: "",
+                silenced = true,
+                time = System.currentTimeMillis()
+            )
+        )
     }
 }

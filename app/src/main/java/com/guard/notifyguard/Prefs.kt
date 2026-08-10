@@ -2,56 +2,79 @@ package com.guard.notifyguard
 
 import android.content.Context
 
-/**
- * Настройки приложения. Читаются сервисами на каждом событии,
- * поэтому держим их простыми и без кеша.
- */
 class Prefs(context: Context) {
 
     private val sp = context.applicationContext
         .getSharedPreferences("notifyguard", Context.MODE_PRIVATE)
 
-    /** Главный выключатель фильтра уведомлений. */
+    init {
+        if (!sp.getBoolean(KEY_SEEDED, false)) {
+            sp.edit()
+                .putStringSet(KEY_BLOCK_WORDS, DEFAULT_BLOCK_WORDS)
+                .putBoolean(KEY_SEEDED, true)
+                .apply()
+        }
+    }
+
     var filterEnabled: Boolean
         get() = sp.getBoolean(KEY_FILTER, true)
         set(v) = sp.edit().putBoolean(KEY_FILTER, v).apply()
 
-    /**
-     * Строгий режим: всё, что не попало в белый список приложений
-     * и не похоже на код или перевод, снимается.
-     */
     var strictMode: Boolean
         get() = sp.getBoolean(KEY_STRICT, false)
         set(v) = sp.edit().putBoolean(KEY_STRICT, v).apply()
 
-    /** Приглушать звонки с номеров, которых нет в контактах. */
     var silenceUnknownCalls: Boolean
         get() = sp.getBoolean(KEY_SILENCE_CALLS, false)
         set(v) = sp.edit().putBoolean(KEY_SILENCE_CALLS, v).apply()
 
-    /** Пакеты, уведомления которых не трогаем никогда. */
+    /** Хранить ли текст уведомления в журнале. */
+    var storeLogText: Boolean
+        get() = sp.getBoolean(KEY_STORE_TEXT, true)
+        set(v) = sp.edit().putBoolean(KEY_STORE_TEXT, v).apply()
+
+    var themeMode: ThemeMode
+        get() = runCatching {
+            ThemeMode.valueOf(sp.getString(KEY_THEME, null) ?: "SYSTEM")
+        }.getOrDefault(ThemeMode.SYSTEM)
+        set(v) = sp.edit().putString(KEY_THEME, v.name).apply()
+
+    var lang: Lang
+        get() = runCatching {
+            Lang.valueOf(sp.getString(KEY_LANG, null) ?: "SYSTEM")
+        }.getOrDefault(Lang.SYSTEM)
+        set(v) = sp.edit().putString(KEY_LANG, v.name).apply()
+
     var allowedApps: Set<String>
         get() = sp.getStringSet(KEY_ALLOWED, emptySet()) ?: emptySet()
         set(v) = sp.edit().putStringSet(KEY_ALLOWED, v).apply()
 
-    /** Пакеты, уведомления которых снимаем всегда. */
     var blockedApps: Set<String>
         get() = sp.getStringSet(KEY_BLOCKED, emptySet()) ?: emptySet()
         set(v) = sp.edit().putStringSet(KEY_BLOCKED, v).apply()
 
-    /**
-     * Стоп-слова пользователя. Срабатывают раньше проверки на коды
-     * и переводы, поэтому «кредит» скроет уведомление даже с суммой.
-     * Экстренные сообщения и состояние устройства они не перекрывают.
-     */
     var customBlockWords: Set<String>
         get() = sp.getStringSet(KEY_BLOCK_WORDS, emptySet()) ?: emptySet()
         set(v) = sp.edit().putStringSet(KEY_BLOCK_WORDS, v).apply()
 
-    /** Слова-исключения: если встретились, уведомление не скрывается. */
     var customAllowWords: Set<String>
         get() = sp.getStringSet(KEY_ALLOW_WORDS, emptySet()) ?: emptySet()
         set(v) = sp.edit().putStringSet(KEY_ALLOW_WORDS, v).apply()
+
+    /**
+     * Пакеты, от которых уже приходили уведомления.
+     * Используется вместо чтения списка всех установленных приложений:
+     * так приложению не нужно разрешение QUERY_ALL_PACKAGES.
+     */
+    var seenApps: Set<String>
+        get() = sp.getStringSet(KEY_SEEN, emptySet()) ?: emptySet()
+        set(v) = sp.edit().putStringSet(KEY_SEEN, v).apply()
+
+    @Synchronized
+    fun rememberApp(pkg: String) {
+        val cur = seenApps
+        if (pkg !in cur && cur.size < 400) seenApps = cur + pkg
+    }
 
     fun addBlockWord(w: String) {
         val word = normalize(w) ?: return
@@ -75,7 +98,7 @@ class Prefs(context: Context) {
 
     private fun normalize(w: String): String? {
         val t = w.trim().lowercase()
-        return if (t.length < 2) null else t
+        return if (t.length < 2 || t.length > 40) null else t
     }
 
     fun toggleAllowed(pkg: String) {
@@ -85,20 +108,24 @@ class Prefs(context: Context) {
         if (pkg in blockedApps) blockedApps = blockedApps - pkg
     }
 
-    fun toggleBlocked(pkg: String) {
-        val set = blockedApps.toMutableSet()
-        if (!set.add(pkg)) set.remove(pkg)
-        blockedApps = set
-        if (pkg in allowedApps) allowedApps = allowedApps - pkg
-    }
+    companion object {
+        /** Заполняется один раз при первом запуске, дальше правится пользователем. */
+        val DEFAULT_BLOCK_WORDS = setOf(
+            "акции", "деньги", "займы", "кредит", "обновление",
+            "подписка", "процент", "рекомендации", "скидка"
+        )
 
-    private companion object {
-        const val KEY_FILTER = "filter_enabled"
-        const val KEY_STRICT = "strict_mode"
-        const val KEY_SILENCE_CALLS = "silence_unknown_calls"
-        const val KEY_ALLOWED = "allowed_apps"
-        const val KEY_BLOCKED = "blocked_apps"
-        const val KEY_BLOCK_WORDS = "custom_block_words"
-        const val KEY_ALLOW_WORDS = "custom_allow_words"
+        private const val KEY_FILTER = "filter_enabled"
+        private const val KEY_STRICT = "strict_mode"
+        private const val KEY_SILENCE_CALLS = "silence_unknown_calls"
+        private const val KEY_STORE_TEXT = "store_log_text"
+        private const val KEY_THEME = "theme_mode"
+        private const val KEY_LANG = "lang"
+        private const val KEY_ALLOWED = "allowed_apps"
+        private const val KEY_BLOCKED = "blocked_apps"
+        private const val KEY_BLOCK_WORDS = "custom_block_words"
+        private const val KEY_ALLOW_WORDS = "custom_allow_words"
+        private const val KEY_SEEN = "seen_apps"
+        private const val KEY_SEEDED = "seeded_v2"
     }
 }
