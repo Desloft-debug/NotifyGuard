@@ -74,3 +74,44 @@ git push origin v1.0
 Через веб-интерфейс: Releases → Draft a new release → Choose a tag → впишите `v1.0` → Create new tag on publish → Publish release. Сборка запустится сама и прикрепит APK к релизу через пару минут.
 
 APK подписан отладочным ключом. Для публикации в Google Play нужен release-вариант с собственным keystore и `signingConfigs` в `app/build.gradle.kts`.
+
+## Подпись релизов
+
+Android не использует внешние центры сертификации: ключ самоподписанный, создаётся один раз и хранится у автора. Главное следствие — APK, подписанные разными ключами, не обновляются поверх друг друга.
+
+### Создание ключа
+
+```
+keytool -genkeypair -v -keystore release.jks -keyalg RSA -keysize 2048 -validity 10000 -alias notifyguard
+```
+
+`keytool` входит в состав JDK; на Windows он лежит в `C:\Program Files\Java\jdk-17\bin` или внутри Android Studio в `jbr\bin`.
+
+Файл `release.jks` и пароли к нему нельзя терять и нельзя коммитить в репозиторий. Потеря ключа означает, что обновить установленное приложение уже не получится — только удалить и поставить заново.
+
+### Передача ключа в CI
+
+```
+certutil -encode release.jks release.txt      # Windows
+base64 -w0 release.jks                        # Linux/macOS
+```
+
+Полученную строку положить в Settings → Secrets and variables → Actions → New repository secret:
+
+| Секрет | Значение |
+|---|---|
+| `KEYSTORE_BASE64` | содержимое base64 без переносов строк |
+| `KEYSTORE_PASSWORD` | пароль хранилища |
+| `KEY_ALIAS` | `notifyguard` |
+| `KEY_PASSWORD` | пароль ключа |
+
+`release.yml` восстанавливает файл из секрета во временный каталог раннера, собирает `assembleRelease` и удаляет ключ после сборки.
+
+### Выпуск
+
+```
+git tag v1.0
+git push origin v1.0
+```
+
+Через веб: Releases → Draft a new release → Choose a tag → `v1.0` → Create new tag on publish → Publish release.
