@@ -54,13 +54,15 @@ fun GuardScreen() {
     var strictMode by remember(refresh) { mutableStateOf(prefs.strictMode) }
     var silenceCalls by remember(refresh) { mutableStateOf(prefs.silenceUnknownCalls) }
     var allowed by remember(refresh) { mutableStateOf(prefs.allowedApps) }
+    var blockWords by remember(refresh) { mutableStateOf(prefs.customBlockWords) }
+    var allowWords by remember(refresh) { mutableStateOf(prefs.customAllowWords) }
 
     val listenerOn by remember(refresh) {
         mutableStateOf(GuardNotificationListener.isEnabled(context))
     }
     val screeningOn by remember(refresh) { mutableStateOf(isCallScreener(context)) }
     val contactsOn by remember(refresh) { mutableStateOf(ContactsRepo.hasPermission(context)) }
-    val log by remember(refresh) { mutableStateOf(BlockLog.read(context)) }
+    var log by remember(refresh) { mutableStateOf(BlockLog.read(context)) }
 
     var showAppPicker by remember { mutableStateOf(false) }
 
@@ -121,7 +123,7 @@ fun GuardScreen() {
                 Section("Уведомления") {
                     SwitchRow(
                         title = "Скрывать рекламу",
-                        subtitle = "Коды подтверждения, операции по счёту и экстренные сообщения остаются",
+                        subtitle = "Коды, операции по счёту, состояние устройства и экстренные сообщения остаются",
                         checked = filterEnabled
                     ) {
                         filterEnabled = it
@@ -144,6 +146,41 @@ fun GuardScreen() {
                     OutlinedButton(onClick = { showAppPicker = true }) {
                         Text("Выбрать приложения")
                     }
+                }
+            }
+
+            item {
+                Section("Стоп-слова") {
+                    Text(
+                        "Уведомление с таким словом скрывается, даже если в нём есть сумма " +
+                            "или слово «код». Экстренные сообщения и состояние устройства " +
+                            "стоп-слова не перекрывают.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    WordEditor(
+                        placeholder = "например: кредит",
+                        words = blockWords,
+                        onAdd = { prefs.addBlockWord(it); blockWords = prefs.customBlockWords },
+                        onRemove = { prefs.removeBlockWord(it); blockWords = prefs.customBlockWords }
+                    )
+                }
+            }
+
+            item {
+                Section("Слова-исключения") {
+                    Text(
+                        "Уведомление с таким словом никогда не скрывается. " +
+                            "Сюда стоит внести названия банков и служб, которые важны.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    WordEditor(
+                        placeholder = "например: сбербанк",
+                        words = allowWords,
+                        onAdd = { prefs.addAllowWord(it); allowWords = prefs.customAllowWords },
+                        onRemove = { prefs.removeAllowWord(it); allowWords = prefs.customAllowWords }
+                    )
                 }
             }
 
@@ -175,7 +212,7 @@ fun GuardScreen() {
                 ) {
                     Text("Что было скрыто", style = MaterialTheme.typography.titleMedium)
                     if (log.isNotEmpty()) {
-                        TextButton(onClick = { BlockLog.clear(context); refresh++ }) {
+                        TextButton(onClick = { BlockLog.clear(context); log = emptyList() }) {
                             Text("Очистить")
                         }
                     }
@@ -185,7 +222,8 @@ fun GuardScreen() {
             if (log.isEmpty()) {
                 item {
                     Text(
-                        "Пока ничего не скрыто. Здесь появятся уведомления, которые снял фильтр.",
+                        "Пока ничего не скрыто. Здесь появятся уведомления, которые снял фильтр, " +
+                            "и причина — по ней видно, какое слово сработало.",
                         style = MaterialTheme.typography.bodyMedium
                     )
                 }
@@ -202,6 +240,14 @@ fun GuardScreen() {
                                 "${e.timeText()} · ${e.reason}",
                                 style = MaterialTheme.typography.bodySmall
                             )
+                            if (e.pkg !in allowed) {
+                                TextButton(onClick = {
+                                    prefs.toggleAllowed(e.pkg)
+                                    allowed = prefs.allowedApps
+                                }) {
+                                    Text("Больше не скрывать это приложение")
+                                }
+                            }
                         }
                     }
                 }
@@ -217,6 +263,58 @@ fun GuardScreen() {
                 allowed = prefs.allowedApps
             },
             onDismiss = { showAppPicker = false }
+        )
+    }
+}
+
+@Composable
+private fun WordEditor(
+    placeholder: String,
+    words: Set<String>,
+    onAdd: (String) -> Unit,
+    onRemove: (String) -> Unit
+) {
+    var input by remember { mutableStateOf("") }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = input,
+            onValueChange = { input = it },
+            placeholder = { Text(placeholder) },
+            singleLine = true,
+            modifier = Modifier.weight(1f)
+        )
+        Spacer(Modifier.width(8.dp))
+        Button(
+            onClick = {
+                if (input.trim().length >= 2) {
+                    onAdd(input)
+                    input = ""
+                }
+            },
+            enabled = input.trim().length >= 2
+        ) { Text("Добавить") }
+    }
+
+    if (words.isEmpty()) {
+        Spacer(Modifier.height(8.dp))
+        Text("Список пуст", style = MaterialTheme.typography.bodySmall)
+    } else {
+        Spacer(Modifier.height(4.dp))
+        words.sorted().forEach { w ->
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(w, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                TextButton(onClick = { onRemove(w) }) { Text("Удалить") }
+            }
+        }
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Слово ищется по началу: «кредит» поймает «кредиты» и «кредитная», " +
+                "но не сработает внутри другого слова.",
+            style = MaterialTheme.typography.bodySmall
         )
     }
 }
@@ -266,8 +364,10 @@ private fun StatusRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(Modifier.weight(1f)) {
-            Text(if (ok) "$title · включено" else "$title · выключено",
-                style = MaterialTheme.typography.bodyLarge)
+            Text(
+                if (ok) "$title · включено" else "$title · выключено",
+                style = MaterialTheme.typography.bodyLarge
+            )
             Text(hint, style = MaterialTheme.typography.bodySmall)
         }
         if (!ok) {
@@ -352,7 +452,10 @@ private fun OnResume(action: () -> Unit) {
 private fun loadApps(context: Context): List<AppInfo> {
     val pm = context.packageManager
     return pm.getInstalledApplications(PackageManager.GET_META_DATA)
-        .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 || pm.getLaunchIntentForPackage(it.packageName) != null }
+        .filter {
+            it.flags and ApplicationInfo.FLAG_SYSTEM == 0 ||
+                pm.getLaunchIntentForPackage(it.packageName) != null
+        }
         .map { AppInfo(it.packageName, pm.getApplicationLabel(it).toString()) }
         .distinctBy { it.pkg }
         .sortedBy { it.label.lowercase() }
