@@ -1,16 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- Нужно, чтобы отличать контакты от незнакомых номеров -->
+    <!-- Единственное опасное разрешение: нужно, чтобы отличать
+         контакты от незнакомых номеров. Разрешения на интернет нет:
+         приложение физически не может ничего отправить наружу. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
-    <!-- Нужно, чтобы показать список установленных приложений в белом списке -->
-    <uses-permission
-        android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
 
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
         android:icon="@android:drawable/ic_lock_silent_mode"
         android:label="@string/app_name"
         android:supportsRtl="true"
@@ -19,6 +18,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:excludeFromRecents="false"
             android:label="@string/app_name">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -26,7 +26,6 @@
             </intent-filter>
         </activity>
 
-        <!-- Читает и снимает уведомления. Доступ выдаётся вручную в настройках системы. -->
         <service
             android:name=".GuardNotificationListener"
             android:exported="true"
@@ -37,8 +36,6 @@
             </intent-filter>
         </service>
 
-
-        <!-- Приглушает звонки не из контактов -->
         <service
             android:name=".GuardCallScreeningService"
             android:exported="true"
