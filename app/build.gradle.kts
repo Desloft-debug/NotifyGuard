@@ -10,8 +10,8 @@ android {
 
     defaultConfig {
         applicationId = "com.guard.notifyguard"
-        minSdk = 29          // setSilenceCall() доступен с Android 10
-        targetSdk = 34       // Android 14
+        minSdk = 29
+        targetSdk = 34
         versionCode = 1
         versionName = "1.0"
     }
