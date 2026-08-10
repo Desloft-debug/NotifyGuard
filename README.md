@@ -1,479 +1,105 @@
-package com.guard.notifyguard
+# Тихие уведомления
 
-import android.Manifest
-import android.app.role.RoleManager
-import android.content.Context
-import android.content.Intent
-import android.content.pm.ApplicationInfo
-import android.content.pm.PackageManager
-import android.os.Bundle
-import android.provider.Settings
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+Скрывает рекламные уведомления и приглушает звонки с незнакомых номеров. Коды подтверждения, операции по счёту, сообщения о заряде батареи и экстренные оповещения остаются видимыми.
 
-data class AppInfo(val pkg: String, val label: String)
+Для Android 10 и новее. В Google Play приложения нет — оно собирается из исходников и ставится файлом.
 
-class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            MaterialTheme(colorScheme = lightColorScheme()) {
-                GuardScreen()
-            }
-        }
-    }
-}
+---
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun GuardScreen() {
-    val context = LocalContext.current
-    val prefs = remember { Prefs(context) }
+## Установка
 
-    var refresh by remember { mutableIntStateOf(0) }
-    OnResume { refresh++ }
+**1. Скачайте APK.** Раздел [Releases](../../releases) справа на странице репозитория → последний релиз → файл `NotifyGuard-vX.X.apk`.
 
-    var filterEnabled by remember(refresh) { mutableStateOf(prefs.filterEnabled) }
-    var strictMode by remember(refresh) { mutableStateOf(prefs.strictMode) }
-    var silenceCalls by remember(refresh) { mutableStateOf(prefs.silenceUnknownCalls) }
-    var allowed by remember(refresh) { mutableStateOf(prefs.allowedApps) }
-    var blockWords by remember(refresh) { mutableStateOf(prefs.customBlockWords) }
-    var allowWords by remember(refresh) { mutableStateOf(prefs.customAllowWords) }
+**2. Откройте файл на телефоне.** Android спросит разрешение на установку приложений из этого источника — выдайте его. Предупреждение о неизвестном источнике здесь нормально: приложение подписано отладочным ключом, потому что не публикуется в магазине.
 
-    val listenerOn by remember(refresh) {
-        mutableStateOf(GuardNotificationListener.isEnabled(context))
-    }
-    val screeningOn by remember(refresh) { mutableStateOf(isCallScreener(context)) }
-    val contactsOn by remember(refresh) { mutableStateOf(ContactsRepo.hasPermission(context)) }
-    var log by remember(refresh) { mutableStateOf(BlockLog.read(context)) }
+**3. Откройте приложение.** На главном экране будет блок «Доступ» с тремя пунктами. Пока они не пройдены, фильтр не работает.
 
-    var showAppPicker by remember { mutableStateOf(false) }
+---
 
-    val contactsLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { refresh++ }
-    val roleLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { refresh++ }
+## Первая настройка
 
-    Scaffold(
-        topBar = { TopAppBar(title = { Text("Тихие уведомления") }) }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                Section("Доступ") {
-                    StatusRow(
-                        title = "Чтение уведомлений",
-                        ok = listenerOn,
-                        hint = if (listenerOn) "Фильтр может снимать уведомления"
-                        else "Без этого доступа фильтр не работает",
-                        action = "Открыть настройки"
-                    ) {
-                        context.startActivity(
-                            Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                        )
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    StatusRow(
-                        title = "Приложение для проверки звонков",
-                        ok = screeningOn,
-                        hint = if (screeningOn) "Можно приглушать незнакомые номера"
-                        else "Нужно, чтобы приглушать звонки",
-                        action = "Назначить"
-                    ) {
-                        requestScreeningRole(context)?.let { roleLauncher.launch(it) }
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    StatusRow(
-                        title = "Доступ к контактам",
-                        ok = contactsOn,
-                        hint = if (contactsOn) "Знакомые номера звонят как обычно"
-                        else "Без контактов все номера считаются знакомыми",
-                        action = "Разрешить"
-                    ) {
-                        contactsLauncher.launch(Manifest.permission.READ_CONTACTS)
-                    }
-                }
-            }
+### Чтение уведомлений — обязательно
 
-            item {
-                Section("Уведомления") {
-                    SwitchRow(
-                        title = "Скрывать рекламу",
-                        subtitle = "Коды, операции по счёту, состояние устройства и экстренные сообщения остаются",
-                        checked = filterEnabled
-                    ) {
-                        filterEnabled = it
-                        prefs.filterEnabled = it
-                    }
-                    SwitchRow(
-                        title = "Строгий режим",
-                        subtitle = "Показывать только белый список, коды и переводы. Остальное скрывать",
-                        checked = strictMode
-                    ) {
-                        strictMode = it
-                        prefs.strictMode = it
-                    }
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Белый список: ${allowed.size} приложений",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(onClick = { showAppPicker = true }) {
-                        Text("Выбрать приложения")
-                    }
-                }
-            }
+Нажмите «Открыть настройки», найдите в списке «Тихие уведомления», включите переключатель.
 
-            item {
-                Section("Стоп-слова") {
-                    Text(
-                        "Уведомление с таким словом скрывается, даже если в нём есть сумма " +
-                            "или слово «код». Экстренные сообщения и состояние устройства " +
-                            "стоп-слова не перекрывают.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    WordEditor(
-                        placeholder = "например: кредит",
-                        words = blockWords,
-                        onAdd = { prefs.addBlockWord(it); blockWords = prefs.customBlockWords },
-                        onRemove = { prefs.removeBlockWord(it); blockWords = prefs.customBlockWords }
-                    )
-                }
-            }
+**Если переключатель неактивен и система пишет про ограничение в целях безопасности** — это защита Android 13+ для приложений, установленных не из магазина. Снимается так: Настройки → Приложения → Тихие уведомления → три точки в правом верхнем углу → **Разрешить ограниченные настройки**. После этого вернитесь и включите переключатель.
 
-            item {
-                Section("Слова-исключения") {
-                    Text(
-                        "Уведомление с таким словом никогда не скрывается. " +
-                            "Сюда стоит внести названия банков и служб, которые важны.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    WordEditor(
-                        placeholder = "например: сбербанк",
-                        words = allowWords,
-                        onAdd = { prefs.addAllowWord(it); allowWords = prefs.customAllowWords },
-                        onRemove = { prefs.removeAllowWord(it); allowWords = prefs.customAllowWords }
-                    )
-                }
-            }
+### Доступ к контактам — если нужны тихие звонки
 
-            item {
-                Section("Звонки") {
-                    SwitchRow(
-                        title = "Приглушать незнакомые номера",
-                        subtitle = "Звонок не из контактов проходит без звука и вибрации, но остаётся в журнале вызовов",
-                        checked = silenceCalls
-                    ) {
-                        silenceCalls = it
-                        prefs.silenceUnknownCalls = it
-                    }
-                    if (silenceCalls && !screeningOn) {
-                        Text(
-                            "Назначьте приложение для проверки звонков выше, иначе настройка ни на что не влияет",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                    }
-                }
-            }
+Нужен, чтобы отличать знакомые номера от незнакомых. Без него приложение считает знакомыми всех и никого не приглушает.
 
-            item {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Что было скрыто", style = MaterialTheme.typography.titleMedium)
-                    if (log.isNotEmpty()) {
-                        TextButton(onClick = { BlockLog.clear(context); log = emptyList() }) {
-                            Text("Очистить")
-                        }
-                    }
-                }
-            }
+### Приложение для проверки звонков — если нужны тихие звонки
 
-            if (log.isEmpty()) {
-                item {
-                    Text(
-                        "Пока ничего не скрыто. Здесь появятся уведомления, которые снял фильтр, " +
-                            "и причина — по ней видно, какое слово сработало.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
-            } else {
-                items(log) { e ->
-                    Card {
-                        Column(Modifier.padding(12.dp)) {
-                            Text(
-                                appLabel(context, e.pkg),
-                                style = MaterialTheme.typography.titleSmall
-                            )
-                            Text(e.title, style = MaterialTheme.typography.bodyMedium)
-                            Text(
-                                "${e.timeText()} · ${e.reason}",
-                                style = MaterialTheme.typography.bodySmall
-                            )
-                            if (e.pkg !in allowed) {
-                                TextButton(onClick = {
-                                    prefs.toggleAllowed(e.pkg)
-                                    allowed = prefs.allowedApps
-                                }) {
-                                    Text("Больше не скрывать это приложение")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+Нажмите «Назначить» и подтвердите. Учтите: эта роль на телефоне одна. Пока её держат «Тихие уведомления», встроенный определитель номера или Truecaller работать не будут.
 
-    if (showAppPicker) {
-        AppPickerDialog(
-            selected = allowed,
-            onToggle = { pkg ->
-                prefs.toggleAllowed(pkg)
-                allowed = prefs.allowedApps
-            },
-            onDismiss = { showAppPicker = false }
-        )
-    }
-}
+---
 
-@Composable
-private fun WordEditor(
-    placeholder: String,
-    words: Set<String>,
-    onAdd: (String) -> Unit,
-    onRemove: (String) -> Unit
-) {
-    var input by remember { mutableStateOf("") }
+## Как этим пользоваться
 
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(
-            value = input,
-            onValueChange = { input = it },
-            placeholder = { Text(placeholder) },
-            singleLine = true,
-            modifier = Modifier.weight(1f)
-        )
-        Spacer(Modifier.width(8.dp))
-        Button(
-            onClick = {
-                if (input.trim().length >= 2) {
-                    onAdd(input)
-                    input = ""
-                }
-            },
-            enabled = input.trim().length >= 2
-        ) { Text("Добавить") }
-    }
+### Скрывать рекламу
 
-    if (words.isEmpty()) {
-        Spacer(Modifier.height(8.dp))
-        Text("Список пуст", style = MaterialTheme.typography.bodySmall)
-    } else {
-        Spacer(Modifier.height(4.dp))
-        words.sorted().forEach { w ->
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(w, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                TextButton(onClick = { onRemove(w) }) { Text("Удалить") }
-            }
-        }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Слово ищется по началу: «кредит» поймает «кредиты» и «кредитная», " +
-                "но не сработает внутри другого слова.",
-            style = MaterialTheme.typography.bodySmall
-        )
-    }
-}
+Главный переключатель. Приложение читает текст каждого уведомления и снимает те, что похожи на рекламу.
 
-@Composable
-private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card {
-        Column(Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Spacer(Modifier.height(8.dp))
-            content()
-        }
-    }
-}
+**Никогда не скрываются:** экстренные оповещения, состояние устройства (заряд, память, перегрев), звонки, будильники, коды подтверждения, операции по счёту.
 
-@Composable
-private fun SwitchRow(
-    title: String,
-    subtitle: String,
-    checked: Boolean,
-    onChange: (Boolean) -> Unit
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(subtitle, style = MaterialTheme.typography.bodySmall)
-        }
-        Switch(checked = checked, onCheckedChange = onChange)
-    }
-}
+### Строгий режим
 
-@Composable
-private fun StatusRow(
-    title: String,
-    ok: Boolean,
-    hint: String,
-    action: String,
-    onClick: () -> Unit
-) {
-    Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(
-                if (ok) "$title · включено" else "$title · выключено",
-                style = MaterialTheme.typography.bodyLarge
-            )
-            Text(hint, style = MaterialTheme.typography.bodySmall)
-        }
-        if (!ok) {
-            TextButton(onClick = onClick) { Text(action) }
-        }
-    }
-}
+Скрывает вообще всё, кроме белого списка приложений, кодов и денежных операций. Подходит, если уведомлений слишком много и проще разрешать по одному, чем запрещать.
 
-@Composable
-private fun AppPickerDialog(
-    selected: Set<String>,
-    onToggle: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    val context = LocalContext.current
-    var query by remember { mutableStateOf("") }
-    var apps by remember { mutableStateOf<List<AppInfo>>(emptyList()) }
+### Что было скрыто
 
-    LaunchedEffect(Unit) {
-        apps = withContext(Dispatchers.IO) { loadApps(context) }
-    }
+Главный экран для настройки. Здесь список снятых уведомлений с причиной — видно, какое именно слово сработало: «рекламное слово: «скидк»».
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Готово") } },
-        title = { Text("Всегда показывать") },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = { query = it },
-                    label = { Text("Поиск") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(Modifier.height(8.dp))
-                if (apps.isEmpty()) {
-                    Text("Загружаю список приложений…")
-                } else {
-                    val filtered = apps.filter {
-                        it.label.contains(query, ignoreCase = true) ||
-                            it.pkg.contains(query, ignoreCase = true)
-                    }
-                    LazyColumn(Modifier.heightIn(max = 380.dp)) {
-                        items(filtered) { app ->
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Checkbox(
-                                    checked = app.pkg in selected,
-                                    onCheckedChange = { onToggle(app.pkg) }
-                                )
-                                Text(
-                                    app.label,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    )
-}
+Если фильтр ошибся, под записью есть кнопка **«Больше не скрывать это приложение»** — она добавит его в белый список одним нажатием.
 
-@Composable
-private fun OnResume(action: () -> Unit) {
-    val owner = LocalLifecycleOwner.current
-    DisposableEffect(owner) {
-        val obs = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) action()
-        }
-        owner.lifecycle.addObserver(obs)
-        onDispose { owner.lifecycle.removeObserver(obs) }
-    }
-}
+Первые день-два стоит заглядывать сюда регулярно. Словари подобраны универсально, под ваши банки и магазины их почти наверняка придётся подправить.
 
-private fun loadApps(context: Context): List<AppInfo> {
-    val pm = context.packageManager
-    return pm.getInstalledApplications(PackageManager.GET_META_DATA)
-        .filter {
-            it.flags and ApplicationInfo.FLAG_SYSTEM == 0 ||
-                pm.getLaunchIntentForPackage(it.packageName) != null
-        }
-        .map { AppInfo(it.packageName, pm.getApplicationLabel(it).toString()) }
-        .distinctBy { it.pkg }
-        .sortedBy { it.label.lowercase() }
-}
+### Стоп-слова
 
-private fun appLabel(context: Context, pkg: String): String = runCatching {
-    val pm = context.packageManager
-    pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
-}.getOrDefault(pkg)
+Ваши собственные слова, при которых уведомление скрывается. Работают жёстче встроенных правил: срабатывают, даже если в тексте есть сумма или слово «код».
 
-private fun isCallScreener(context: Context): Boolean {
-    val rm = context.getSystemService(RoleManager::class.java) ?: return false
-    return rm.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING) &&
-        rm.isRoleHeld(RoleManager.ROLE_CALL_SCREENING)
-}
+Например, если банк шлёт предложения кредитов — добавьте `кредит`. Уведомления «Одобрен кредит 500 000 ₽» исчезнут, а «Перевод 3000 ₽ от Ивана» останется, потому что стоп-слова ищутся отдельно от денежных операций.
 
-private fun requestScreeningRole(context: Context): Intent? {
-    val rm = context.getSystemService(RoleManager::class.java) ?: return null
-    if (!rm.isRoleAvailable(RoleManager.ROLE_CALL_SCREENING)) return null
-    return rm.createRequestRoleIntent(RoleManager.ROLE_CALL_SCREENING)
-}
+Слово ищется **по началу**: `скидк` поймает «скидки» и «скидка», `кредит` — «кредиты» и «кредитная». Внутри другого слова не сработает: `код` не совпадёт с «промокод».
+
+Экстренные оповещения и сообщения о заряде стоп-словами перекрыть нельзя — эта проверка идёт раньше.
+
+### Слова-исключения
+
+Обратная сторона: при этих словах уведомление не скрывается никогда. Сюда стоит внести названия банков, доставок и служб, которые для вас важны.
+
+### Выбрать приложения
+
+Белый список: уведомления отмеченных приложений не фильтруются вообще.
+
+Банковское приложение сюда лучше добавить сразу, а его рекламные рассылки отключить внутри самого банка — так ни один перевод точно не потеряется.
+
+### Приглушать незнакомые номера
+
+Звонок с номера, которого нет в контактах, проходит без звука и вибрации. Звонок **не сбрасывается**: он остаётся в журнале вызовов, отображается как пропущенный, человек может дозвониться повторно. Экстренные службы через эту проверку не проходят вовсе.
+
+---
+
+## Что нужно понимать
+
+**Реклама может мигнуть.** Android даёт приложениям доступ к уведомлению уже после того, как показал его. Баннер появляется на долю секунды и исчезает, звук может успеть проиграть. Убрать это без системных прав невозможно — ограничение самой системы, а не недоработка.
+
+**Фильтр по словам ошибается.** Он не понимает смысл, только ищет совпадения. Что-то нужное иногда скроется, что-то рекламное пройдёт. Журнал и стоп-слова существуют именно для того, чтобы это исправлять по ходу.
+
+**Ничего никуда не отправляется.** Тексты уведомлений разбираются на телефоне, интернет приложению не нужен, журнал хранится локально. Разрешение на чтение SMS не запрашивается — приложение видит только текст уведомлений.
+
+**Не полагайтесь на это в критичных случаях.** Если ждёте важный звонок с незнакомого номера — выключите приглушение заранее.
+
+---
+
+## Обновление
+
+Скачайте новый APK из релизов и установите поверх. Настройки, стоп-слова и списки приложений сохранятся. Разрешения выдавать заново не придётся.
+
+## Удаление
+
+Обычным способом, через долгое нажатие на иконку. Перед удалением стоит снять роль проверки звонков, если хотите вернуть встроенный определитель номера: Настройки → Приложения → Приложения по умолчанию → Проверка вызовов.
+
+---
+
+Сборка из исходников, устройство проекта и логика правил описаны в [DEVELOPMENT.md](DEVELOPMENT.md).
