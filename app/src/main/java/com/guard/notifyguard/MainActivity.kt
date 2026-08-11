@@ -11,6 +11,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -22,6 +24,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,6 +39,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.launch
+import java.io.File
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -45,7 +50,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, LOG }
+private enum class Screen { HOME, DICT, LOG }
+
+/* ---------------------------------- Каркас ---------------------------------- */
 
 @Composable
 fun App() {
@@ -59,7 +66,7 @@ fun App() {
     var lang by remember(refresh) { mutableStateOf(prefs.lang) }
     var screen by remember { mutableStateOf(Screen.HOME) }
 
-    val systemDark = isSystemInDarkTheme()
+    val systemDark = systemInDarkTheme()
     val dark = when (themeMode) {
         ThemeMode.SYSTEM -> systemDark
         ThemeMode.LIGHT -> false
@@ -68,40 +75,49 @@ fun App() {
     val strings = when (lang) {
         Lang.RU -> RU
         Lang.EN -> EN
-        Lang.SYSTEM -> if (systemLanguageIsRussian()) RU else EN
+        Lang.SYSTEM -> if (Locale.getDefault().language.equals("ru", true)) RU else EN
     }
 
     GuardTheme(dark) {
         CompositionLocalProvider(LocalStrings provides strings) {
-            when (screen) {
-                Screen.HOME -> HomeScreen(
-                    prefs = prefs,
-                    refresh = refresh,
-                    onRefresh = { refresh++ },
-                    themeMode = themeMode,
-                    onTheme = { themeMode = it; prefs.themeMode = it },
-                    lang = lang,
-                    onLang = { lang = it; prefs.lang = it },
-                    onOpenLog = { screen = Screen.LOG }
-                )
-                Screen.LOG -> LogScreen(
-                    prefs = prefs,
-                    onBack = { screen = Screen.HOME }
-                )
+            AnimatedContent(
+                targetState = screen,
+                transitionSpec = {
+                    val forward = targetState.ordinal > initialState.ordinal
+                    val offset = if (forward) 1 else -1
+                    (slideInHorizontally(tween(280)) { it / 6 * offset } +
+                        fadeIn(tween(220))) togetherWith
+                        (slideOutHorizontally(tween(280)) { -it / 6 * offset } +
+                            fadeOut(tween(160)))
+                },
+                label = "screen"
+            ) { current ->
+                when (current) {
+                    Screen.HOME -> HomeScreen(
+                        prefs = prefs,
+                        refresh = refresh,
+                        onRefresh = { refresh++ },
+                        themeMode = themeMode,
+                        onTheme = { themeMode = it; prefs.themeMode = it },
+                        lang = lang,
+                        onLang = { lang = it; prefs.lang = it },
+                        onOpenDict = { screen = Screen.DICT },
+                        onOpenLog = { screen = Screen.LOG }
+                    )
+                    Screen.DICT -> DictScreen(prefs) { screen = Screen.HOME }
+                    Screen.LOG -> LogScreen(prefs) { screen = Screen.HOME }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun isSystemInDarkTheme(): Boolean {
+private fun systemInDarkTheme(): Boolean {
     val cfg = LocalConfiguration.current
     return (cfg.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
         android.content.res.Configuration.UI_MODE_NIGHT_YES
 }
-
-private fun systemLanguageIsRussian(): Boolean =
-    Locale.getDefault().language.equals("ru", ignoreCase = true)
 
 /* ------------------------------- Главный экран ------------------------------ */
 
@@ -115,24 +131,49 @@ private fun HomeScreen(
     onTheme: (ThemeMode) -> Unit,
     lang: Lang,
     onLang: (Lang) -> Unit,
+    onOpenDict: () -> Unit,
     onOpenLog: () -> Unit
 ) {
     val s = LocalStrings.current
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     var filterEnabled by remember(refresh) { mutableStateOf(prefs.filterEnabled) }
     var strictMode by remember(refresh) { mutableStateOf(prefs.strictMode) }
     var silenceCalls by remember(refresh) { mutableStateOf(prefs.silenceUnknownCalls) }
     var storeText by remember(refresh) { mutableStateOf(prefs.storeLogText) }
+    var autoUpdate by remember(refresh) { mutableStateOf(prefs.updateCheckEnabled) }
     var allowed by remember(refresh) { mutableStateOf(prefs.allowedApps) }
-    var blockWords by remember(refresh) { mutableStateOf(prefs.customBlockWords) }
-    var allowWords by remember(refresh) { mutableStateOf(prefs.customAllowWords) }
+    val wordsTotal = remember(refresh) {
+        prefs.customBlockWords.size + prefs.customAllowWords.size
+    }
 
     val listenerOn = remember(refresh) { GuardNotificationListener.isEnabled(context) }
     val screeningOn = remember(refresh) { isCallScreener(context) }
     val contactsOn = remember(refresh) { ContactsRepo.hasPermission(context) }
 
     var showPicker by remember { mutableStateOf(false) }
+
+    // Состояние обновления
+    var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+
+    suspend fun check(manual: Boolean) {
+        updateState = UpdateState.Checking
+        prefs.lastUpdateCheck = System.currentTimeMillis()
+        Updater.fetchLatest()
+            .onSuccess { info ->
+                updateState = if (Updater.isNewer(BuildConfig.VERSION_NAME, info.version)) {
+                    UpdateState.Available(info)
+                } else {
+                    if (manual) UpdateState.UpToDate else UpdateState.Idle
+                }
+            }
+            .onFailure { updateState = if (manual) UpdateState.Failed else UpdateState.Idle }
+    }
+
+    LaunchedEffect(Unit) {
+        if (Updater.shouldCheck(prefs)) check(manual = false)
+    }
 
     val contactsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -153,41 +194,86 @@ private fun HomeScreen(
         }
     ) { padding ->
         LazyColumn(
-            modifier = Modifier
-                .padding(padding)
-                .fillMaxSize(),
+            modifier = Modifier.padding(padding).fillMaxSize(),
             contentPadding = PaddingValues(16.dp, 4.dp, 16.dp, 32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
-                ActionTile(
-                    title = s.openLog,
-                    subtitle = s.openLogHint,
-                    onClick = onOpenLog
-                )
+                AnimatedVisibility(
+                    visible = updateState is UpdateState.Available,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    (updateState as? UpdateState.Available)?.let { st ->
+                        UpdateBanner(
+                            info = st.info,
+                            onDownload = {
+                                scope.launch {
+                                    updateState = UpdateState.Downloading(0f)
+                                    Updater.download(context, st.info) { p ->
+                                        updateState = UpdateState.Downloading(p)
+                                    }.onSuccess { f ->
+                                        updateState = UpdateState.Ready(f)
+                                    }.onFailure { updateState = UpdateState.Failed }
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+
+            item {
+                AnimatedVisibility(
+                    visible = updateState is UpdateState.Downloading ||
+                        updateState is UpdateState.Ready,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    DownloadCard(
+                        state = updateState,
+                        onInstall = { file ->
+                            if (Updater.canInstall(context)) Updater.install(context, file)
+                            else Updater.requestInstallPermission(context)
+                        }
+                    )
+                }
+            }
+
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    NavTile(
+                        title = s.openDict,
+                        subtitle = "$wordsTotal ${s.wordsCount}",
+                        modifier = Modifier.weight(1f),
+                        onClick = onOpenDict
+                    )
+                    NavTile(
+                        title = s.openLog,
+                        subtitle = s.openLogHint,
+                        modifier = Modifier.weight(1f),
+                        onClick = onOpenLog
+                    )
+                }
             }
 
             item {
                 Section(s.accessTitle) {
                     StatusRow(
-                        s.accessNotifications,
-                        listenerOn,
+                        s.accessNotifications, listenerOn,
                         if (listenerOn) s.accessNotificationsOn else s.accessNotificationsOff,
                         s.actionOpenSettings
                     ) {
                         context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                     }
                     StatusRow(
-                        s.accessCalls,
-                        screeningOn,
+                        s.accessCalls, screeningOn,
                         if (screeningOn) s.accessCallsOn else s.accessCallsOff,
                         s.actionAssign
                     ) {
                         requestScreeningRole(context)?.let { roleLauncher.launch(it) }
                     }
                     StatusRow(
-                        s.accessContacts,
-                        contactsOn,
+                        s.accessContacts, contactsOn,
                         if (contactsOn) s.accessContactsOn else s.accessContactsOff,
                         s.actionGrant
                     ) {
@@ -201,15 +287,11 @@ private fun HomeScreen(
                     SwitchRow(s.hideAds, s.hideAdsHint, filterEnabled) {
                         filterEnabled = it; prefs.filterEnabled = it
                     }
-                    Divider()
                     SwitchRow(s.strictMode, s.strictModeHint, strictMode) {
                         strictMode = it; prefs.strictMode = it
                     }
-                    Divider()
                     Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp),
+                        Modifier.fillMaxWidth().padding(top = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
@@ -225,40 +307,20 @@ private fun HomeScreen(
             }
 
             item {
-                Section(s.stopWordsTitle) {
-                    Hint(s.stopWordsHint)
-                    WordEditor(
-                        placeholder = s.stopWordsPlaceholder,
-                        words = blockWords,
-                        onAdd = { prefs.addBlockWord(it); blockWords = prefs.customBlockWords },
-                        onRemove = { prefs.removeBlockWord(it); blockWords = prefs.customBlockWords }
-                    )
-                }
-            }
-
-            item {
-                Section(s.allowWordsTitle) {
-                    Hint(s.allowWordsHint)
-                    WordEditor(
-                        placeholder = s.allowWordsPlaceholder,
-                        words = allowWords,
-                        onAdd = { prefs.addAllowWord(it); allowWords = prefs.customAllowWords },
-                        onRemove = { prefs.removeAllowWord(it); allowWords = prefs.customAllowWords }
-                    )
-                }
-            }
-
-            item {
                 Section(s.callsTitle) {
                     SwitchRow(s.silenceUnknown, s.silenceUnknownHint, silenceCalls) {
                         silenceCalls = it; prefs.silenceUnknownCalls = it
                     }
-                    if (silenceCalls && !screeningOn) {
-                        Spacer(Modifier.height(8.dp))
+                    AnimatedVisibility(
+                        visible = silenceCalls && !screeningOn,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
                         Text(
                             s.callsWarning,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 8.dp)
                         )
                     }
                 }
@@ -269,17 +331,61 @@ private fun HomeScreen(
                     Text(s.theme, style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(8.dp))
                     SegmentedRow(
-                        options = listOf(s.themeSystem, s.themeLight, s.themeDark),
-                        selectedIndex = themeMode.ordinal,
-                        onSelect = { onTheme(ThemeMode.entries[it]) }
-                    )
+                        listOf(s.themeSystem, s.themeLight, s.themeDark),
+                        themeMode.ordinal
+                    ) { onTheme(ThemeMode.entries[it]) }
                     Spacer(Modifier.height(16.dp))
                     Text(s.language, style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(8.dp))
                     SegmentedRow(
-                        options = listOf(s.langSystem, s.langRu, s.langEn),
-                        selectedIndex = lang.ordinal,
-                        onSelect = { onLang(Lang.entries[it]) }
+                        listOf(s.langSystem, s.langRu, s.langEn),
+                        lang.ordinal
+                    ) { onLang(Lang.entries[it]) }
+                }
+            }
+
+            item {
+                Section(s.updateTitle) {
+                    Text(
+                        "${s.currentVersion}: ${BuildConfig.VERSION_NAME}",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    SwitchRow(s.updateAuto, s.updateAutoHint, autoUpdate) {
+                        autoUpdate = it; prefs.updateCheckEnabled = it
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        FilledTonalButton(
+                            onClick = { scope.launch { check(manual = true) } },
+                            enabled = updateState !is UpdateState.Checking
+                        ) {
+                            Text(
+                                if (updateState is UpdateState.Checking) s.updateChecking
+                                else s.updateCheck
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        AnimatedContent(updateState, label = "update") { st ->
+                            val msg = when (st) {
+                                is UpdateState.UpToDate -> s.updateUpToDate
+                                is UpdateState.Failed -> s.updateFailed
+                                else -> ""
+                            }
+                            if (msg.isNotEmpty()) {
+                                Text(
+                                    msg,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        s.updateNetworkNote,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -301,6 +407,283 @@ private fun HomeScreen(
             onToggle = { prefs.toggleAllowed(it); allowed = prefs.allowedApps },
             onDismiss = { showPicker = false }
         )
+    }
+}
+
+private sealed interface UpdateState {
+    data object Idle : UpdateState
+    data object Checking : UpdateState
+    data object UpToDate : UpdateState
+    data object Failed : UpdateState
+    data class Available(val info: ReleaseInfo) : UpdateState
+    data class Downloading(val progress: Float) : UpdateState
+    data class Ready(val file: File) : UpdateState
+}
+
+@Composable
+private fun UpdateBanner(info: ReleaseInfo, onDownload: () -> Unit) {
+    val s = LocalStrings.current
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ),
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(18.dp)) {
+            Text(
+                "${s.updateFound} ${info.tag}",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            if (info.notes.isNotBlank()) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    info.notes.lines().take(4).joinToString("\n"),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = onDownload, shape = RoundedCornerShape(14.dp)) {
+                Text(s.updateDownload)
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadCard(state: UpdateState, onInstall: (File) -> Unit) {
+    val s = LocalStrings.current
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(18.dp)) {
+            when (state) {
+                is UpdateState.Downloading -> {
+                    val p by animateFloatAsState(state.progress, label = "progress")
+                    Text(s.updateDownloading, style = MaterialTheme.typography.titleSmall)
+                    Spacer(Modifier.height(10.dp))
+                    LinearProgressIndicator(
+                        progress = { p },
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp))
+                    )
+                }
+                is UpdateState.Ready -> {
+                    Button(
+                        onClick = { onInstall(state.file) },
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text(s.updateInstall) }
+                }
+                else -> Unit
+            }
+        }
+    }
+}
+
+/* -------------------------------- Экран словаря ----------------------------- */
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DictScreen(prefs: Prefs, onBack: () -> Unit) {
+    val s = LocalStrings.current
+    var tab by remember { mutableIntStateOf(0) }
+    var blockWords by remember { mutableStateOf(prefs.customBlockWords) }
+    var allowWords by remember { mutableStateOf(prefs.customAllowWords) }
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = { Text(s.dictTitle) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = s.back)
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        }
+    ) { padding ->
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            TabRow(tab, containerColor = MaterialTheme.colorScheme.background) {
+                Tab(tab == 0, { tab = 0 }, text = { Text(s.tabStop) })
+                Tab(tab == 1, { tab = 1 }, text = { Text(s.tabAllow) })
+                Tab(tab == 2, { tab = 2 }, text = { Text(s.tabBuiltIn) })
+            }
+            AnimatedContent(
+                targetState = tab,
+                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                label = "dict"
+            ) { current ->
+                when (current) {
+                    0 -> WordList(
+                        hint = s.stopWordsHint,
+                        placeholder = s.stopWordsPlaceholder,
+                        words = blockWords,
+                        onAdd = { prefs.addBlockWord(it); blockWords = prefs.customBlockWords },
+                        onRemove = { prefs.removeBlockWord(it); blockWords = prefs.customBlockWords }
+                    )
+                    1 -> WordList(
+                        hint = s.allowWordsHint,
+                        placeholder = s.allowWordsPlaceholder,
+                        words = allowWords,
+                        onAdd = { prefs.addAllowWord(it); allowWords = prefs.customAllowWords },
+                        onRemove = { prefs.removeAllowWord(it); allowWords = prefs.customAllowWords }
+                    )
+                    else -> BuiltInList()
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun WordList(
+    hint: String,
+    placeholder: String,
+    words: Set<String>,
+    onAdd: (String) -> Unit,
+    onRemove: (String) -> Unit
+) {
+    val s = LocalStrings.current
+    var input by remember { mutableStateOf("") }
+    val sorted = remember(words) { words.sorted() }
+
+    LazyColumn(
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item {
+            Text(
+                hint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { if (it.length <= 40) input = it },
+                    placeholder = { Text(placeholder) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier.weight(1f)
+                )
+                Spacer(Modifier.width(10.dp))
+                Button(
+                    onClick = { onAdd(input); input = "" },
+                    enabled = input.trim().length >= 2,
+                    shape = RoundedCornerShape(14.dp)
+                ) { Text(s.add) }
+            }
+        }
+        if (sorted.isEmpty()) {
+            item {
+                Text(
+                    s.emptyList,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
+            items(sorted, key = { it }) { w ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .animateItem()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(start = 16.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(w, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    IconButton(onClick = { onRemove(w) }) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = s.remove,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            item {
+                Text(
+                    s.wordMatchHint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun BuiltInList() {
+    val s = LocalStrings.current
+    val groups = listOf(
+        s.groupEmergency to FilterRules.EMERGENCY_WORDS,
+        s.groupSystem to FilterRules.SYSTEM_WORDS,
+        s.groupDelivery to FilterRules.DELIVERY_WORDS,
+        s.groupCode to FilterRules.CODE_WORDS,
+        s.groupMoney to FilterRules.MONEY_WORDS,
+        s.groupPromo to FilterRules.PROMO_WORDS
+    )
+    var expanded by remember { mutableStateOf<String?>(null) }
+
+    LazyColumn(
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Text(
+                s.builtInHint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        items(groups, key = { it.first }) { (title, words) ->
+            val open = expanded == title
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))
+                    .clickable { expanded = if (open) null else title }
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            title,
+                            Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            "${words.size} ${s.wordsCount}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (open) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            words.joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -342,30 +725,25 @@ private fun LogScreen(prefs: Prefs, onBack: () -> Unit) {
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            TabRow(
-                selectedTabIndex = tab,
-                containerColor = MaterialTheme.colorScheme.background
-            ) {
-                Tab(tab == 0, onClick = { tab = 0 }, text = { Text(s.tabNotifications) })
-                Tab(tab == 1, onClick = { tab = 1 }, text = { Text(s.tabCalls) })
+            TabRow(tab, containerColor = MaterialTheme.colorScheme.background) {
+                Tab(tab == 0, { tab = 0 }, text = { Text(s.tabNotifications) })
+                Tab(tab == 1, { tab = 1 }, text = { Text(s.tabCalls) })
             }
-
-            LazyColumn(
-                contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                if (tab == 0) {
-                    if (notifications.isEmpty()) {
-                        item { EmptyNote(s.emptyNotifications) }
-                    } else {
-                        items(notifications) { e ->
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surface
-                                ),
-                                shape = RoundedCornerShape(16.dp)
-                            ) {
-                                Column(Modifier.padding(14.dp)) {
+            AnimatedContent(
+                targetState = tab,
+                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+                label = "log"
+            ) { current ->
+                LazyColumn(
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    if (current == 0) {
+                        if (notifications.isEmpty()) {
+                            item { EmptyNote(s.emptyNotifications) }
+                        } else {
+                            items(notifications) { e ->
+                                LogCard {
                                     Text(
                                         appLabel(context, e.pkg),
                                         style = MaterialTheme.typography.titleSmall
@@ -393,36 +771,21 @@ private fun LogScreen(prefs: Prefs, onBack: () -> Unit) {
                                 }
                             }
                         }
-                    }
-                } else {
-                    if (calls.isEmpty()) {
-                        item { EmptyNote(s.emptyCalls) }
                     } else {
-                        items(calls) { c ->
-                            Card(
-                                colors = CardDefaults.cardColors(
-                                    containerColor = MaterialTheme.colorScheme.surface
-                                ),
-                                shape = RoundedCornerShape(16.dp)
-                            ) {
-                                Row(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .padding(14.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(Modifier.weight(1f)) {
-                                        Text(
-                                            c.number.ifBlank { "—" },
-                                            style = MaterialTheme.typography.titleSmall
-                                        )
-                                        Text(
-                                            "${c.timeText()} · " +
-                                                if (c.silenced) s.silenced else s.allowedCall,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
+                        if (calls.isEmpty()) {
+                            item { EmptyNote(s.emptyCalls) }
+                        } else {
+                            items(calls) { c ->
+                                LogCard {
+                                    Text(
+                                        c.number.ifBlank { "—" },
+                                        style = MaterialTheme.typography.titleSmall
+                                    )
+                                    Text(
+                                        "${c.timeText()} · ${s.silenced}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
                                 }
                             }
                         }
@@ -433,13 +796,25 @@ private fun LogScreen(prefs: Prefs, onBack: () -> Unit) {
     }
 }
 
+@Composable
+private fun LogCard(content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(14.dp), content = content)
+    }
+}
+
 /* ------------------------------- Общие элементы ----------------------------- */
 
 @Composable
 private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(20.dp)
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.fillMaxWidth().animateContentSize()
     ) {
         Column(Modifier.padding(18.dp)) {
             Text(
@@ -454,48 +829,41 @@ private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) 
 }
 
 @Composable
-private fun ActionTile(title: String, subtitle: String, onClick: () -> Unit) {
+private fun NavTile(
+    title: String,
+    subtitle: String,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
     Card(
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
         ),
         shape = RoundedCornerShape(20.dp),
-        modifier = Modifier.fillMaxWidth().clickable { onClick() }
+        modifier = modifier.clickable { onClick() }
     ) {
-        Row(
-            Modifier.padding(18.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Column(Modifier.padding(16.dp)) {
             Icon(
-                Icons.Filled.List,
+                if (title == LocalStrings.current.openLog) Icons.Filled.List
+                else Icons.Filled.Search,
                 contentDescription = null,
                 tint = MaterialTheme.colorScheme.onPrimaryContainer
             )
-            Spacer(Modifier.width(14.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
-}
-
-@Composable
-private fun Hint(text: String) {
-    Text(
-        text,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant
-    )
-    Spacer(Modifier.height(12.dp))
 }
 
 @Composable
@@ -539,18 +907,16 @@ private fun StatusRow(
     onClick: () -> Unit
 ) {
     val s = LocalStrings.current
+    val dotColor by animateColorAsState(
+        if (ok) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.error,
+        label = "dot"
+    )
     Row(
         Modifier.fillMaxWidth().padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
-            Modifier
-                .size(10.dp)
-                .clip(RoundedCornerShape(5.dp))
-                .background(
-                    if (ok) MaterialTheme.colorScheme.secondary
-                    else MaterialTheme.colorScheme.error
-                )
+            Modifier.size(10.dp).clip(RoundedCornerShape(5.dp)).background(dotColor)
         )
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
@@ -564,8 +930,7 @@ private fun StatusRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        if (!ok) {
-            Spacer(Modifier.width(8.dp))
+        AnimatedVisibility(!ok, enter = fadeIn(), exit = fadeOut()) {
             FilledTonalButton(onClick = onClick) { Text(action) }
         }
     }
@@ -587,13 +952,22 @@ private fun SegmentedRow(
     ) {
         options.forEachIndexed { i, label ->
             val selected = i == selectedIndex
+            val bg by animateColorAsState(
+                if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                animationSpec = tween(220),
+                label = "seg"
+            )
+            val fg by animateColorAsState(
+                if (selected) MaterialTheme.colorScheme.onPrimary
+                else MaterialTheme.colorScheme.onSurfaceVariant,
+                animationSpec = tween(220),
+                label = "segText"
+            )
             Box(
                 Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(11.dp))
-                    .background(
-                        if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
-                    )
+                    .background(bg)
                     .clickable { onSelect(i) }
                     .padding(vertical = 10.dp),
                 contentAlignment = Alignment.Center
@@ -603,76 +977,10 @@ private fun SegmentedRow(
                     style = MaterialTheme.typography.labelLarge,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    color = if (selected) MaterialTheme.colorScheme.onPrimary
-                    else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = fg
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun WordEditor(
-    placeholder: String,
-    words: Set<String>,
-    onAdd: (String) -> Unit,
-    onRemove: (String) -> Unit
-) {
-    val s = LocalStrings.current
-    var input by remember { mutableStateOf("") }
-
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        OutlinedTextField(
-            value = input,
-            onValueChange = { if (it.length <= 40) input = it },
-            placeholder = { Text(placeholder) },
-            singleLine = true,
-            shape = RoundedCornerShape(14.dp),
-            modifier = Modifier.weight(1f)
-        )
-        Spacer(Modifier.width(10.dp))
-        Button(
-            onClick = { onAdd(input); input = "" },
-            enabled = input.trim().length >= 2,
-            shape = RoundedCornerShape(14.dp)
-        ) { Text(s.add) }
-    }
-
-    Spacer(Modifier.height(10.dp))
-
-    if (words.isEmpty()) {
-        Text(
-            s.emptyList,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    } else {
-        words.sorted().forEach { w ->
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 3.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(w, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                IconButton(onClick = { onRemove(w) }) {
-                    Icon(
-                        Icons.Filled.Close,
-                        contentDescription = s.remove,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Text(
-            s.wordMatchHint,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
     }
 }
 
@@ -722,7 +1030,7 @@ private fun AppPickerDialog(
                         it.second.contains(query, true) || it.first.contains(query, true)
                     }
                     LazyColumn(Modifier.heightIn(max = 360.dp)) {
-                        items(filtered) { (pkg, label) ->
+                        items(filtered, key = { it.first }) { (pkg, label) ->
                             Row(
                                 Modifier
                                     .fillMaxWidth()
@@ -739,7 +1047,7 @@ private fun AppPickerDialog(
                                     fontWeight = if (pkg in selected) FontWeight.SemiBold
                                     else FontWeight.Normal
                                 )
-                                if (pkg in selected) {
+                                AnimatedVisibility(pkg in selected) {
                                     Icon(
                                         Icons.Filled.Check,
                                         contentDescription = null,

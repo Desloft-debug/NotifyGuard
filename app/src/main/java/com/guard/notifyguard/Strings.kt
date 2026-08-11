@@ -4,13 +4,10 @@ import androidx.compose.runtime.staticCompositionLocalOf
 
 enum class Lang { SYSTEM, RU, EN }
 
-/**
- * Тексты интерфейса. Держим их в коде, а не в ресурсах:
- * так язык переключается мгновенно, без пересоздания активности.
- */
 data class Strings(
     val appTitle: String,
     val logTitle: String,
+    val dictTitle: String,
     val back: String,
 
     val accessTitle: String,
@@ -37,16 +34,31 @@ data class Strings(
     val whitelistCount: String,
     val chooseApps: String,
 
-    val stopWordsTitle: String,
+    val openDict: String,
+    val openDictHint: String,
+    val openLog: String,
+    val openLogHint: String,
+
+    val tabStop: String,
+    val tabAllow: String,
+    val tabBuiltIn: String,
     val stopWordsHint: String,
     val stopWordsPlaceholder: String,
-    val allowWordsTitle: String,
     val allowWordsHint: String,
     val allowWordsPlaceholder: String,
+    val builtInHint: String,
     val add: String,
     val remove: String,
     val emptyList: String,
     val wordMatchHint: String,
+    val wordsCount: String,
+
+    val groupPromo: String,
+    val groupCode: String,
+    val groupMoney: String,
+    val groupDelivery: String,
+    val groupSystem: String,
+    val groupEmergency: String,
 
     val callsTitle: String,
     val silenceUnknown: String,
@@ -67,8 +79,22 @@ data class Strings(
     val storeText: String,
     val storeTextHint: String,
 
-    val openLog: String,
-    val openLogHint: String,
+    val updateTitle: String,
+    val updateAuto: String,
+    val updateAutoHint: String,
+    val updateCheck: String,
+    val updateChecking: String,
+    val updateUpToDate: String,
+    val updateFound: String,
+    val updateDownload: String,
+    val updateDownloading: String,
+    val updateInstall: String,
+    val updateFailed: String,
+    val updateNeedPermission: String,
+    val updateGrant: String,
+    val currentVersion: String,
+    val updateNetworkNote: String,
+
     val tabNotifications: String,
     val tabCalls: String,
     val clear: String,
@@ -77,18 +103,19 @@ data class Strings(
     val unwhitelist: String,
     val hiddenText: String,
     val silenced: String,
-    val allowedCall: String,
 
     val pickerTitle: String,
     val pickerHint: String,
     val pickerEmpty: String,
     val search: String,
-    val done: String
+    val done: String,
+    val cancel: String
 )
 
 val RU = Strings(
     appTitle = "Тихие уведомления",
     logTitle = "Журнал",
+    dictTitle = "Словарь",
     back = "Назад",
 
     accessTitle = "Доступ",
@@ -113,18 +140,33 @@ val RU = Strings(
     strictMode = "Строгий режим",
     strictModeHint = "Показывать только белый список, коды и переводы",
     whitelistCount = "Белый список",
-    chooseApps = "Выбрать приложения",
+    chooseApps = "Приложения",
 
-    stopWordsTitle = "Стоп-слова",
+    openDict = "Словарь",
+    openDictHint = "Стоп-слова, исключения и встроенные списки",
+    openLog = "Журнал",
+    openLogHint = "Скрытые уведомления и приглушённые звонки",
+
+    tabStop = "Стоп-слова",
+    tabAllow = "Исключения",
+    tabBuiltIn = "Встроенные",
     stopWordsHint = "Уведомление с таким словом скрывается, даже если в нём есть сумма или слово «код». Экстренные оповещения и состояние устройства не перекрываются.",
     stopWordsPlaceholder = "например: кредит",
-    allowWordsTitle = "Слова-исключения",
     allowWordsHint = "Уведомление с таким словом не скрывается никогда.",
     allowWordsPlaceholder = "например: сбербанк",
+    builtInHint = "Списки, зашитые в приложение. Их нельзя изменить, но можно перекрыть своими словами.",
     add = "Добавить",
     remove = "Удалить",
     emptyList = "Список пуст",
     wordMatchHint = "Слово ищется по началу: «кредит» поймает «кредиты», но не сработает внутри другого слова.",
+    wordsCount = "слов",
+
+    groupPromo = "Реклама",
+    groupCode = "Коды подтверждения",
+    groupMoney = "Операции по счёту",
+    groupDelivery = "Статусы доставки",
+    groupSystem = "Состояние устройства",
+    groupEmergency = "Экстренные оповещения",
 
     callsTitle = "Звонки",
     silenceUnknown = "Приглушать незнакомые номера",
@@ -133,7 +175,7 @@ val RU = Strings(
 
     appearanceTitle = "Оформление",
     theme = "Тема",
-    themeSystem = "Как в системе",
+    themeSystem = "Системная",
     themeLight = "Светлая",
     themeDark = "Тёмная",
     language = "Язык",
@@ -145,8 +187,22 @@ val RU = Strings(
     storeText = "Сохранять текст в журнале",
     storeTextHint = "Выключите, если не хотите, чтобы тексты уведомлений хранились на устройстве",
 
-    openLog = "Журнал",
-    openLogHint = "Скрытые уведомления и приглушённые звонки",
+    updateTitle = "Обновления",
+    updateAuto = "Проверять обновления",
+    updateAutoHint = "Раз в сутки при открытии приложения. Запрос уходит только на api.github.com",
+    updateCheck = "Проверить сейчас",
+    updateChecking = "Проверяю…",
+    updateUpToDate = "Установлена последняя версия",
+    updateFound = "Доступна версия",
+    updateDownload = "Скачать",
+    updateDownloading = "Загрузка…",
+    updateInstall = "Установить",
+    updateFailed = "Не удалось проверить обновления",
+    updateNeedPermission = "Разрешите установку приложений из этого источника",
+    updateGrant = "Разрешить",
+    currentVersion = "Текущая версия",
+    updateNetworkNote = "Интернет используется только для проверки и загрузки обновлений. Тексты уведомлений никуда не отправляются.",
+
     tabNotifications = "Уведомления",
     tabCalls = "Звонки",
     clear = "Очистить",
@@ -155,18 +211,19 @@ val RU = Strings(
     unwhitelist = "Больше не скрывать это приложение",
     hiddenText = "текст не сохранён",
     silenced = "приглушён",
-    allowedCall = "пропущен со звуком",
 
     pickerTitle = "Всегда показывать",
     pickerHint = "Список пополняется по мере того, как приложения присылают уведомления",
     pickerEmpty = "Приложения появятся здесь после первых уведомлений",
     search = "Поиск",
-    done = "Готово"
+    done = "Готово",
+    cancel = "Отмена"
 )
 
 val EN = Strings(
     appTitle = "Quiet Notifications",
     logTitle = "Log",
+    dictTitle = "Dictionary",
     back = "Back",
 
     accessTitle = "Access",
@@ -191,18 +248,33 @@ val EN = Strings(
     strictMode = "Strict mode",
     strictModeHint = "Show only whitelisted apps, codes and transfers",
     whitelistCount = "Whitelist",
-    chooseApps = "Choose apps",
+    chooseApps = "Apps",
 
-    stopWordsTitle = "Blocked words",
+    openDict = "Dictionary",
+    openDictHint = "Blocked words, exceptions and built-in lists",
+    openLog = "Log",
+    openLogHint = "Hidden notifications and silenced calls",
+
+    tabStop = "Blocked",
+    tabAllow = "Allowed",
+    tabBuiltIn = "Built-in",
     stopWordsHint = "A notification containing this word is hidden even if it mentions an amount or a code. Emergency alerts and device status are never overridden.",
     stopWordsPlaceholder = "e.g. loan",
-    allowWordsTitle = "Allowed words",
     allowWordsHint = "A notification containing this word is never hidden.",
     allowWordsPlaceholder = "e.g. revolut",
+    builtInHint = "Lists bundled with the app. They can't be edited, but your own words take priority.",
     add = "Add",
     remove = "Remove",
     emptyList = "Empty",
     wordMatchHint = "Words match from the start: “loan” catches “loans”, but not inside another word.",
+    wordsCount = "words",
+
+    groupPromo = "Advertising",
+    groupCode = "Verification codes",
+    groupMoney = "Account activity",
+    groupDelivery = "Delivery updates",
+    groupSystem = "Device status",
+    groupEmergency = "Emergency alerts",
 
     callsTitle = "Calls",
     silenceUnknown = "Silence unknown numbers",
@@ -223,8 +295,22 @@ val EN = Strings(
     storeText = "Keep text in the log",
     storeTextHint = "Turn off if you don't want notification text stored on the device",
 
-    openLog = "Log",
-    openLogHint = "Hidden notifications and silenced calls",
+    updateTitle = "Updates",
+    updateAuto = "Check for updates",
+    updateAutoHint = "Once a day when you open the app. Only api.github.com is contacted",
+    updateCheck = "Check now",
+    updateChecking = "Checking…",
+    updateUpToDate = "You're on the latest version",
+    updateFound = "Version available",
+    updateDownload = "Download",
+    updateDownloading = "Downloading…",
+    updateInstall = "Install",
+    updateFailed = "Couldn't check for updates",
+    updateNeedPermission = "Allow installing apps from this source",
+    updateGrant = "Allow",
+    currentVersion = "Current version",
+    updateNetworkNote = "The network is used only to check and download updates. Notification text is never sent anywhere.",
+
     tabNotifications = "Notifications",
     tabCalls = "Calls",
     clear = "Clear",
@@ -233,13 +319,13 @@ val EN = Strings(
     unwhitelist = "Stop hiding this app",
     hiddenText = "text not stored",
     silenced = "silenced",
-    allowedCall = "rang normally",
 
     pickerTitle = "Always show",
     pickerHint = "The list fills up as apps send notifications",
     pickerEmpty = "Apps appear here after their first notification",
     search = "Search",
-    done = "Done"
+    done = "Done",
+    cancel = "Cancel"
 )
 
 val LocalStrings = staticCompositionLocalOf { RU }

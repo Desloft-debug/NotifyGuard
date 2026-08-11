@@ -11,9 +11,13 @@ class GuardNotificationListener : NotificationListenerService() {
 
     private lateinit var prefs: Prefs
 
+    /** Пакеты, уже занесённые в seenApps: не дёргаем диск повторно. */
+    private val known = HashSet<String>(64)
+
     override fun onCreate() {
         super.onCreate()
         prefs = Prefs(this)
+        known.addAll(prefs.seenApps)
     }
 
     override fun onListenerConnected() {
@@ -23,13 +27,16 @@ class GuardNotificationListener : NotificationListenerService() {
     override fun onNotificationPosted(sbn: StatusBarNotification) = handle(sbn)
 
     private fun handle(sbn: StatusBarNotification) {
-        if (sbn.packageName == packageName) return
-        prefs.rememberApp(sbn.packageName)
+        val pkg = sbn.packageName
+        if (pkg == packageName) return
 
-        if (!prefs.filterEnabled) return
+        if (known.add(pkg)) prefs.rememberApp(pkg)
+
+        val snapshot = prefs.snapshot()
+        if (!snapshot.filterEnabled) return
 
         val verdict = try {
-            FilterRules.decide(sbn, prefs)
+            FilterRules.decide(sbn, snapshot)
         } catch (e: Exception) {
             Log.w(TAG, "Ошибка правил, уведомление пропущено", e)
             return
@@ -42,8 +49,8 @@ class GuardNotificationListener : NotificationListenerService() {
         GuardLog.addNotification(
             this,
             LogEntry(
-                pkg = sbn.packageName,
-                title = if (prefs.storeLogText) {
+                pkg = pkg,
+                title = if (snapshot.storeLogText) {
                     FilterRules.shortTitle(sbn.notification?.extras)
                 } else "",
                 reason = verdict.reason,

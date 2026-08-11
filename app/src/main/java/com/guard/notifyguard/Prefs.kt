@@ -1,11 +1,35 @@
 package com.guard.notifyguard
 
 import android.content.Context
+import android.content.SharedPreferences
+
+/**
+ * Снимок настроек, нужных фильтру. Читается на каждом уведомлении,
+ * поэтому собирается один раз и переиспользуется, пока настройки
+ * не изменятся. Без этого на каждое уведомление создавалось
+ * шесть новых коллекций.
+ */
+data class Snapshot(
+    val filterEnabled: Boolean,
+    val strictMode: Boolean,
+    val storeLogText: Boolean,
+    val allowedApps: Set<String>,
+    val blockedApps: Set<String>,
+    val blockWords: List<String>,
+    val allowWords: List<String>
+)
 
 class Prefs(context: Context) {
 
     private val sp = context.applicationContext
         .getSharedPreferences("notifyguard", Context.MODE_PRIVATE)
+
+    @Volatile
+    private var cached: Snapshot? = null
+
+    private val invalidator = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        cached = null
+    }
 
     init {
         if (!sp.getBoolean(KEY_SEEDED, false)) {
@@ -14,6 +38,23 @@ class Prefs(context: Context) {
                 .putBoolean(KEY_SEEDED, true)
                 .apply()
         }
+        sp.registerOnSharedPreferenceChangeListener(invalidator)
+    }
+
+    /** Дешёвое чтение для сервисов. */
+    fun snapshot(): Snapshot {
+        cached?.let { return it }
+        val s = Snapshot(
+            filterEnabled = filterEnabled,
+            strictMode = strictMode,
+            storeLogText = storeLogText,
+            allowedApps = allowedApps,
+            blockedApps = blockedApps,
+            blockWords = customBlockWords.toList(),
+            allowWords = customAllowWords.toList()
+        )
+        cached = s
+        return s
     }
 
     var filterEnabled: Boolean
@@ -28,10 +69,18 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_SILENCE_CALLS, false)
         set(v) = sp.edit().putBoolean(KEY_SILENCE_CALLS, v).apply()
 
-    /** Хранить ли текст уведомления в журнале. */
     var storeLogText: Boolean
         get() = sp.getBoolean(KEY_STORE_TEXT, true)
         set(v) = sp.edit().putBoolean(KEY_STORE_TEXT, v).apply()
+
+    /** Проверять ли обновления на GitHub при открытии приложения. */
+    var updateCheckEnabled: Boolean
+        get() = sp.getBoolean(KEY_UPDATE_CHECK, true)
+        set(v) = sp.edit().putBoolean(KEY_UPDATE_CHECK, v).apply()
+
+    var lastUpdateCheck: Long
+        get() = sp.getLong(KEY_LAST_CHECK, 0L)
+        set(v) = sp.edit().putLong(KEY_LAST_CHECK, v).apply()
 
     var themeMode: ThemeMode
         get() = runCatching {
@@ -61,11 +110,6 @@ class Prefs(context: Context) {
         get() = sp.getStringSet(KEY_ALLOW_WORDS, emptySet()) ?: emptySet()
         set(v) = sp.edit().putStringSet(KEY_ALLOW_WORDS, v).apply()
 
-    /**
-     * Пакеты, от которых уже приходили уведомления.
-     * Используется вместо чтения списка всех установленных приложений:
-     * так приложению не нужно разрешение QUERY_ALL_PACKAGES.
-     */
     var seenApps: Set<String>
         get() = sp.getStringSet(KEY_SEEN, emptySet()) ?: emptySet()
         set(v) = sp.edit().putStringSet(KEY_SEEN, v).apply()
@@ -109,7 +153,6 @@ class Prefs(context: Context) {
     }
 
     companion object {
-        /** Заполняется один раз при первом запуске, дальше правится пользователем. */
         val DEFAULT_BLOCK_WORDS = setOf(
             "акции", "деньги", "займы", "кредит", "обновление",
             "подписка", "процент", "рекомендации", "скидка"
@@ -119,6 +162,8 @@ class Prefs(context: Context) {
         private const val KEY_STRICT = "strict_mode"
         private const val KEY_SILENCE_CALLS = "silence_unknown_calls"
         private const val KEY_STORE_TEXT = "store_log_text"
+        private const val KEY_UPDATE_CHECK = "update_check"
+        private const val KEY_LAST_CHECK = "last_update_check"
         private const val KEY_THEME = "theme_mode"
         private const val KEY_LANG = "lang"
         private const val KEY_ALLOWED = "allowed_apps"
