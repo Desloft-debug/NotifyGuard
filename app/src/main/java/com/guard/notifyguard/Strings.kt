@@ -39,8 +39,10 @@ data class Strings(
     val openLog: String,
     val openLogHint: String,
 
-    val tabStop: String,
-    val tabAllow: String,
+    val tabMine: String,
+    val tabReady: String,
+    val modeBlock: String,
+    val modeAllow: String,
     val tabBuiltIn: String,
     val tabOnline: String,
     val onlineTitle: String,
@@ -175,7 +177,21 @@ data class Strings(
     val numberDisclaimer: String,
     val numberCheckOnline: String,
     val numberCheckWarning: String,
-    val numberAddContact: String
+    val numberAddContact: String,
+
+    val feedbackTitle: String,
+    val feedbackHint: String,
+    val feedbackKindBug: String,
+    val feedbackKindIdea: String,
+    val feedbackKindWord: String,
+    val feedbackPlaceholder: String,
+    val feedbackSend: String,
+    val feedbackCopy: String,
+    val feedbackCopied: String,
+    val feedbackInclude: String,
+    val feedbackIncludeHint: String,
+    val feedbackNote: String,
+    val feedbackNoBrowser: String
 )
 
 val RU = Strings(
@@ -213,8 +229,10 @@ val RU = Strings(
     openLog = "Журнал",
     openLogHint = "Скрытые уведомления и приглушённые звонки",
 
-    tabStop = "Стоп-слова",
-    tabAllow = "Исключения",
+    tabMine = "Мои слова",
+    tabReady = "Готовые",
+    modeBlock = "Скрывать",
+    modeAllow = "Показывать",
     tabBuiltIn = "Встроенные",
     tabOnline = "Онлайн",
     onlineTitle = "Онлайн-словарь",
@@ -349,7 +367,21 @@ val RU = Strings(
     numberDisclaimer = "Оценка построена на нумерации и на истории звонков этого телефона. Это подсказка, а не проверка по базе мошенников.",
     numberCheckOnline = "Проверить в открытых справочниках",
     numberCheckWarning = "Откроется браузер, номер станет виден стороннему сайту.",
-    numberAddContact = "Номер знакомый? Добавьте его в контакты, и звонки перестанут приглушаться."
+    numberAddContact = "Номер знакомый? Добавьте его в контакты, и звонки перестанут приглушаться.",
+
+    feedbackTitle = "Обратная связь",
+    feedbackHint = "Опишите проблему или предложите слово для словаря. Откроется страница GitHub с уже заполненной формой — отправите её сами, под своей учётной записью.",
+    feedbackKindBug = "Ошибка",
+    feedbackKindIdea = "Предложение",
+    feedbackKindWord = "Слово",
+    feedbackPlaceholder = "Что случилось или что добавить",
+    feedbackSend = "Открыть форму",
+    feedbackCopy = "Скопировать текст",
+    feedbackCopied = "Текст скопирован",
+    feedbackInclude = "Приложить версию и модель",
+    feedbackIncludeHint = "Версия приложения, версия Android, модель телефона. Без этого разобраться в ошибке сложнее",
+    feedbackNote = "Приложение ничего не отправляет само: отправка происходит в браузере, вашими руками. Для этого нужна учётная запись GitHub.",
+    feedbackNoBrowser = "Не удалось открыть браузер — текст скопирован"
 )
 
 val EN = Strings(
@@ -387,8 +419,10 @@ val EN = Strings(
     openLog = "Log",
     openLogHint = "Hidden notifications and silenced calls",
 
-    tabStop = "Blocked",
-    tabAllow = "Allowed",
+    tabMine = "My words",
+    tabReady = "Bundled",
+    modeBlock = "Hide",
+    modeAllow = "Show",
     tabBuiltIn = "Built-in",
     tabOnline = "Online",
     onlineTitle = "Online dictionary",
@@ -523,7 +557,21 @@ val EN = Strings(
     numberDisclaimer = "The assessment is based on numbering rules and this phone's own call history. It is a hint, not a check against a fraud database.",
     numberCheckOnline = "Look up in public directories",
     numberCheckWarning = "Opens a browser; the number becomes visible to a third-party site.",
-    numberAddContact = "Know this number? Add it to contacts and calls will ring normally."
+    numberAddContact = "Know this number? Add it to contacts and calls will ring normally.",
+
+    feedbackTitle = "Feedback",
+    feedbackHint = "Describe a problem or suggest a word for the dictionary. A GitHub page opens with the form pre-filled — you send it yourself, from your own account.",
+    feedbackKindBug = "Bug",
+    feedbackKindIdea = "Idea",
+    feedbackKindWord = "Word",
+    feedbackPlaceholder = "What happened, or what to add",
+    feedbackSend = "Open the form",
+    feedbackCopy = "Copy text",
+    feedbackCopied = "Copied",
+    feedbackInclude = "Attach version and device",
+    feedbackIncludeHint = "App version, Android version, phone model. Harder to debug without it",
+    feedbackNote = "The app never sends anything by itself: submission happens in the browser, by you. A GitHub account is required.",
+    feedbackNoBrowser = "Couldn't open a browser — text copied instead"
 )
 
 val LocalStrings = staticCompositionLocalOf { RU }

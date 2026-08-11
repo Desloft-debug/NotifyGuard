@@ -18,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -135,8 +136,12 @@ private fun MainScaffold(
         Tab.HELP to s.navHelp
     )
 
+    val snackbarState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = { SnackbarHost(snackbarState) },
         topBar = {
             TopAppBar(
                 title = {
@@ -176,11 +181,15 @@ private fun MainScaffold(
         ) { current ->
             when (current) {
                 Tab.PROTECT -> ProtectScreen(
-                    prefs, refresh, onRefresh, themeMode, onTheme, lang, onLang
+                    prefs, refresh, onRefresh, themeMode, onTheme, lang, onLang,
+                    notify = { msg -> scope.launch { snackbarState.showSnackbar(msg) } }
                 )
                 Tab.DICT -> DictScreen(prefs)
                 Tab.LOG -> LogScreen(prefs, onOpenNumber)
-                Tab.HELP -> HelpScreen(prefs, refresh, onRefresh)
+                Tab.HELP -> HelpScreen(
+                    prefs, refresh, onRefresh,
+                    notify = { msg -> scope.launch { snackbarState.showSnackbar(msg) } }
+                )
             }
         }
     }
@@ -203,11 +212,13 @@ private fun ProtectScreen(
     themeMode: ThemeMode,
     onTheme: (ThemeMode) -> Unit,
     lang: Lang,
-    onLang: (Lang) -> Unit
+    onLang: (Lang) -> Unit,
+    notify: (String) -> Unit
 ) {
     val s = LocalStrings.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
 
     var filterEnabled by remember(refresh) { mutableStateOf(prefs.filterEnabled) }
     var strictMode by remember(refresh) { mutableStateOf(prefs.strictMode) }
@@ -228,11 +239,23 @@ private fun ProtectScreen(
         prefs.lastUpdateCheck = System.currentTimeMillis()
         Updater.fetchLatest()
             .onSuccess { info ->
-                updateState = if (Updater.isNewer(BuildConfig.VERSION_NAME, info.version)) {
-                    UpdateState.Available(info)
-                } else if (manual) UpdateState.UpToDate else UpdateState.Idle
+                if (Updater.isNewer(BuildConfig.VERSION_NAME, info.version)) {
+                    updateState = UpdateState.Available(info)
+                    // Баннер живёт вверху списка: если проверку запустили
+                    // из нижней секции, без прокрутки его не увидеть
+                    if (manual) {
+                        notify("${s.updateFound} ${info.tag}")
+                        listState.animateScrollToItem(0)
+                    }
+                } else {
+                    updateState = UpdateState.Idle
+                    if (manual) notify(s.updateUpToDate)
+                }
             }
-            .onFailure { updateState = if (manual) UpdateState.Failed else UpdateState.Idle }
+            .onFailure {
+                updateState = UpdateState.Idle
+                if (manual) notify(s.updateFailed)
+            }
     }
 
     LaunchedEffect(Unit) {
@@ -248,6 +271,7 @@ private fun ProtectScreen(
     ) { onRefresh() }
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp, 4.dp, 16.dp, 24.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -420,19 +444,6 @@ private fun ProtectScreen(
                             else s.updateCheck
                         )
                     }
-                    Spacer(Modifier.width(12.dp))
-                    val msg = when (updateState) {
-                        is UpdateState.UpToDate -> s.updateUpToDate
-                        is UpdateState.Failed -> s.updateFailed
-                        else -> ""
-                    }
-                    AnimatedVisibility(msg.isNotEmpty()) {
-                        Text(
-                            msg,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
                 }
             }
         }
@@ -465,7 +476,12 @@ private fun ProtectScreen(
 /* ------------------------------- Экран справки ------------------------------ */
 
 @Composable
-private fun HelpScreen(prefs: Prefs, refresh: Int, onRefresh: () -> Unit) {
+private fun HelpScreen(
+    prefs: Prefs,
+    refresh: Int,
+    onRefresh: () -> Unit,
+    notify: (String) -> Unit
+) {
     val s = LocalStrings.current
     val context = LocalContext.current
 
@@ -578,6 +594,91 @@ private fun HelpScreen(prefs: Prefs, refresh: Int, onRefresh: () -> Unit) {
                     modifier = Modifier.fillMaxWidth()
                 ) { Text(s.setupHide) }
             }
+        }
+
+        item { FeedbackCard(notify) }
+    }
+}
+
+@Composable
+private fun FeedbackCard(notify: (String) -> Unit) {
+    val s = LocalStrings.current
+    val context = LocalContext.current
+
+    var kind by remember { mutableIntStateOf(0) }
+    var text by remember { mutableStateOf("") }
+    var attach by remember { mutableStateOf(true) }
+
+    val titles = listOf(s.feedbackKindBug, s.feedbackKindIdea, s.feedbackKindWord)
+
+    fun body(): String = buildString {
+        appendLine(text.trim())
+        if (attach) {
+            appendLine()
+            append(Feedback.diagnostics())
+        }
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.fillMaxWidth().animateContentSize()
+    ) {
+        Column(Modifier.padding(18.dp)) {
+            Text(
+                s.feedbackTitle,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                s.feedbackHint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(Modifier.height(12.dp))
+            SegmentedRow(titles, kind) { kind = it }
+            Spacer(Modifier.height(12.dp))
+            OutlinedTextField(
+                value = text,
+                onValueChange = { if (it.length <= 2000) text = it },
+                placeholder = { Text(s.feedbackPlaceholder) },
+                shape = RoundedCornerShape(14.dp),
+                minLines = 3,
+                maxLines = 8,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(6.dp))
+            SwitchRow(s.feedbackInclude, s.feedbackIncludeHint, attach) { attach = it }
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Button(
+                    onClick = {
+                        val title = "[${titles[kind]}] " + text.trim().take(60)
+                        val url = Feedback.issueUrl(title, body())
+                        if (!Feedback.open(context, url)) {
+                            Feedback.copy(context, body())
+                            notify(s.feedbackNoBrowser)
+                        }
+                    },
+                    enabled = text.trim().length >= 5,
+                    shape = RoundedCornerShape(14.dp)
+                ) { Text(s.feedbackSend) }
+                Spacer(Modifier.width(10.dp))
+                TextButton(
+                    onClick = {
+                        Feedback.copy(context, body())
+                        notify(s.feedbackCopied)
+                    },
+                    enabled = text.trim().isNotEmpty()
+                ) { Text(s.feedbackCopy) }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                s.feedbackNote,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }
@@ -856,39 +957,190 @@ private fun DownloadCard(state: UpdateState, onInstall: (File) -> Unit) {
 private fun DictScreen(prefs: Prefs) {
     val s = LocalStrings.current
     var tab by remember { mutableIntStateOf(0) }
+    var mode by remember { mutableIntStateOf(0) }
     var blockWords by remember { mutableStateOf(prefs.customBlockWords) }
     var allowWords by remember { mutableStateOf(prefs.customAllowWords) }
 
-    run {
-        Column(Modifier.fillMaxSize()) {
-            TabRow(tab, containerColor = MaterialTheme.colorScheme.background) {
-                Tab(tab == 0, { tab = 0 }, text = { Text(s.tabStop) })
-                Tab(tab == 1, { tab = 1 }, text = { Text(s.tabAllow) })
-                Tab(tab == 2, { tab = 2 }, text = { Text(s.tabBuiltIn) })
-                Tab(tab == 3, { tab = 3 }, text = { Text(s.tabOnline) })
+    Column(Modifier.fillMaxSize()) {
+        TabRow(tab, containerColor = MaterialTheme.colorScheme.background) {
+            Tab(tab == 0, { tab = 0 }, text = { Text(s.tabMine, maxLines = 1) })
+            Tab(tab == 1, { tab = 1 }, text = { Text(s.tabReady, maxLines = 1) })
+        }
+        AnimatedContent(
+            targetState = tab,
+            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+            label = "dict"
+        ) { current ->
+            if (current == 0) {
+                Column(Modifier.fillMaxSize()) {
+                    Box(Modifier.padding(16.dp, 12.dp, 16.dp, 0.dp)) {
+                        SegmentedRow(listOf(s.modeBlock, s.modeAllow), mode) { mode = it }
+                    }
+                    if (mode == 0) {
+                        WordList(
+                            hint = s.stopWordsHint,
+                            placeholder = s.stopWordsPlaceholder,
+                            words = blockWords,
+                            onAdd = { prefs.addBlockWord(it); blockWords = prefs.customBlockWords },
+                            onRemove = { prefs.removeBlockWord(it); blockWords = prefs.customBlockWords }
+                        )
+                    } else {
+                        WordList(
+                            hint = s.allowWordsHint,
+                            placeholder = s.allowWordsPlaceholder,
+                            words = allowWords,
+                            onAdd = { prefs.addAllowWord(it); allowWords = prefs.customAllowWords },
+                            onRemove = { prefs.removeAllowWord(it); allowWords = prefs.customAllowWords }
+                        )
+                    }
+                }
+            } else {
+                ReadyWordsTab(prefs)
             }
-            AnimatedContent(
-                targetState = tab,
-                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
-                label = "dict"
-            ) { current ->
-                when (current) {
-                    0 -> WordList(
-                        hint = s.stopWordsHint,
-                        placeholder = s.stopWordsPlaceholder,
-                        words = blockWords,
-                        onAdd = { prefs.addBlockWord(it); blockWords = prefs.customBlockWords },
-                        onRemove = { prefs.removeBlockWord(it); blockWords = prefs.customBlockWords }
+        }
+    }
+}
+
+/** Онлайн-словарь и встроенные списки на одной вкладке. */
+@Composable
+private fun ReadyWordsTab(prefs: Prefs) {
+    val s = LocalStrings.current
+    val scope = rememberCoroutineScope()
+
+    var enabled by remember { mutableStateOf(prefs.remoteDictEnabled) }
+    var dict by remember { mutableStateOf(RemoteDictionary.cached(prefs)) }
+    var fetched by remember { mutableLongStateOf(prefs.remoteDictFetched) }
+    var busy by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf<String?>(null) }
+
+    val groups = listOf(
+        s.groupEmergency to FilterRules.EMERGENCY_WORDS,
+        s.groupSystem to FilterRules.SYSTEM_WORDS,
+        s.groupDelivery to FilterRules.DELIVERY_WORDS,
+        s.groupCode to FilterRules.CODE_WORDS,
+        s.groupMoney to FilterRules.MONEY_WORDS,
+        s.groupPromo to FilterRules.PROMO_WORDS
+    )
+
+    LazyColumn(
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth().animateContentSize()
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(s.onlineTitle, style = MaterialTheme.typography.titleSmall)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        s.onlineHint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    1 -> WordList(
-                        hint = s.allowWordsHint,
-                        placeholder = s.allowWordsPlaceholder,
-                        words = allowWords,
-                        onAdd = { prefs.addAllowWord(it); allowWords = prefs.customAllowWords },
-                        onRemove = { prefs.removeAllowWord(it); allowWords = prefs.customAllowWords }
-                    )
-                    2 -> BuiltInList()
-                    else -> OnlineDictTab(prefs)
+                    Spacer(Modifier.height(6.dp))
+                    SwitchRow(s.onlineEnabled, s.onlineEnabledHint, enabled) {
+                        enabled = it
+                        prefs.remoteDictEnabled = it
+                        dict = RemoteDictionary.cached(prefs)
+                    }
+                    AnimatedVisibility(enabled) {
+                        Column {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "${s.onlineVersion}: ${dict.version} · " +
+                                    "${dict.block.size} ${s.onlineBlocked}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                "${s.onlineUpdated}: " + if (fetched == 0L) s.onlineNever
+                                else LogEntry("", "", "", fetched).timeText(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                FilledTonalButton(
+                                    onClick = {
+                                        scope.launch {
+                                            busy = true; failed = false
+                                            RemoteDictionary.sync(prefs)
+                                                .onSuccess {
+                                                    dict = it
+                                                    fetched = prefs.remoteDictFetched
+                                                }
+                                                .onFailure { failed = true }
+                                            busy = false
+                                        }
+                                    },
+                                    enabled = !busy
+                                ) { Text(if (busy) s.onlineSyncing else s.onlineSync) }
+                                Spacer(Modifier.width(12.dp))
+                                AnimatedVisibility(failed) {
+                                    Text(
+                                        s.onlineFailed,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                s.onlineSafety,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            Text(
+                s.builtInHint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        items(groups, key = { it.first }) { (title, words) ->
+            val open = expanded == title
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))
+                    .clickable { expanded = if (open) null else title }
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            title,
+                            Modifier.weight(1f),
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            "${words.size}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (open) {
+                        Spacer(Modifier.height(10.dp))
+                        Text(
+                            words.joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -972,187 +1224,6 @@ private fun WordList(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 8.dp)
                 )
-            }
-        }
-    }
-}
-
-@Composable
-private fun OnlineDictTab(prefs: Prefs) {
-    val s = LocalStrings.current
-    val scope = rememberCoroutineScope()
-
-    var enabled by remember { mutableStateOf(prefs.remoteDictEnabled) }
-    var dict by remember { mutableStateOf(RemoteDictionary.cached(prefs)) }
-    var fetched by remember { mutableLongStateOf(prefs.remoteDictFetched) }
-    var busy by remember { mutableStateOf(false) }
-    var failed by remember { mutableStateOf(false) }
-
-    LazyColumn(
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        item {
-            Text(
-                s.onlineHint,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        item {
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier.fillMaxWidth().animateContentSize()
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    SwitchRow(s.onlineEnabled, s.onlineEnabledHint, enabled) {
-                        enabled = it
-                        prefs.remoteDictEnabled = it
-                        dict = RemoteDictionary.cached(prefs)
-                    }
-                    AnimatedVisibility(enabled) {
-                        Column {
-                            Spacer(Modifier.height(10.dp))
-                            Text(
-                                "${s.onlineVersion}: ${dict.version}",
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                            Text(
-                                "${s.onlineUpdated}: " + if (fetched == 0L) s.onlineNever
-                                else LogEntry("", "", "", fetched).timeText(),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                "${dict.block.size} ${s.onlineBlocked} · " +
-                                    "${dict.allow.size} ${s.onlineAllowed}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(Modifier.height(12.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                FilledTonalButton(
-                                    onClick = {
-                                        scope.launch {
-                                            busy = true; failed = false
-                                            RemoteDictionary.sync(prefs)
-                                                .onSuccess {
-                                                    dict = it
-                                                    fetched = prefs.remoteDictFetched
-                                                }
-                                                .onFailure { failed = true }
-                                            busy = false
-                                        }
-                                    },
-                                    enabled = !busy
-                                ) { Text(if (busy) s.onlineSyncing else s.onlineSync) }
-                                Spacer(Modifier.width(12.dp))
-                                AnimatedVisibility(failed) {
-                                    Text(
-                                        s.onlineFailed,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.error
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        item {
-            Text(
-                s.onlineSafety,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (enabled && dict.block.isNotEmpty()) {
-            item {
-                Card(
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    ),
-                    shape = RoundedCornerShape(18.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(Modifier.padding(16.dp)) {
-                        Text(s.onlineBlocked, style = MaterialTheme.typography.titleSmall)
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            dict.block.joinToString(" · "),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun BuiltInList() {
-    val s = LocalStrings.current
-    val groups = listOf(
-        s.groupEmergency to FilterRules.EMERGENCY_WORDS,
-        s.groupSystem to FilterRules.SYSTEM_WORDS,
-        s.groupDelivery to FilterRules.DELIVERY_WORDS,
-        s.groupCode to FilterRules.CODE_WORDS,
-        s.groupMoney to FilterRules.MONEY_WORDS,
-        s.groupPromo to FilterRules.PROMO_WORDS
-    )
-    var expanded by remember { mutableStateOf<String?>(null) }
-
-    LazyColumn(
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
-    ) {
-        item {
-            Text(
-                s.builtInHint,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        items(groups, key = { it.first }) { (title, words) ->
-            val open = expanded == title
-            Card(
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                shape = RoundedCornerShape(18.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))
-                    .clickable { expanded = if (open) null else title }
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            title,
-                            Modifier.weight(1f),
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Text(
-                            "${words.size} ${s.wordsCount}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    if (open) {
-                        Spacer(Modifier.height(10.dp))
-                        Text(
-                            words.joinToString(" · "),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
             }
         }
     }
