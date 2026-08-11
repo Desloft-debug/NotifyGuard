@@ -1,116 +1,96 @@
-# Тихие уведомления
+# Silent Notifications
 
-Скрывает рекламные уведомления и приглушает звонки с незнакомых номеров. Коды подтверждения, операции по счёту, сообщения о заряде батареи и экстренные оповещения остаются видимыми.
+Hides advertising notifications and mute calls from unknown numbers. Verification codes, account transactions, battery status messages, and emergency alerts remain visible.
 
-Для Android 10 и новее. В Google Play приложения нет — оно собирается из исходников и ставится файлом.
-
----
-
-## Установка
-
-**Obtainium** — самый удобный способ: приложение само следит за релизами и обновляет.
-Установите [Obtainium](https://github.com/ImranR98/Obtainium), нажмите «Add App» и вставьте ссылку на этот репозиторий.
-
-**APK файлом.** Раздел [Releases](../../releases) → последний релиз → `NotifyGuard-vX.X.apk`. Откройте файл на телефоне и разрешите установку из этого источника.
-
-**F-Droid.** Приложение подано в репозиторий IzzyOnDroid. После включения будет доступно в любом F-Droid-клиенте после добавления репозитория IzzyOnDroid.
-
-## Первая настройка
-
-### Чтение уведомлений — обязательно
-
-Нажмите «Открыть настройки», найдите в списке «Тихие уведомления», включите переключатель.
-
-**Если переключатель неактивен и система пишет про ограничение в целях безопасности** — это защита Android 13+ для приложений, установленных не из магазина. Снимается так: Настройки → Приложения → Тихие уведомления → три точки в правом верхнем углу → **Разрешить ограниченные настройки**. После этого вернитесь и включите переключатель.
-
-### Доступ к контактам — если нужны тихие звонки
-
-Нужен, чтобы отличать знакомые номера от незнакомых. Без него приложение считает знакомыми всех и никого не приглушает.
-
-### Приложение для проверки звонков — если нужны тихие звонки
-
-Нажмите «Назначить» и подтвердите. Учтите: эта роль на телефоне одна. Пока её держат «Тихие уведомления», встроенный определитель номера или Truecaller работать не будут.
+For Android 10 and later. The app is not available on Google Play—it is built from source and installed as a file.
 
 ---
 
-## Как этим пользоваться
+## Installation
 
-### Скрывать рекламу
+**Obtainium** is the most convenient method: the app automatically monitors releases and updates.
+Install [Obtainium](https://github.com/ImranR98/Obtainium), click "Add App," and paste the link to this repository.
 
-Главный переключатель. Приложение читает текст каждого уведомления и снимает те, что похожи на рекламу.
+**APK file.** [Releases](../../releases) → latest release → `NotifyGuard-vX.X.apk`. Open the file on your phone and allow installation from this source.
 
-**Никогда не скрываются:** экстренные оповещения, состояние устройства (заряд, память, перегрев), звонки, будильники, коды подтверждения, операции по счёту.
+**F-Droid.** The app is submitted to the IzzyOnDroid repository. Once enabled, it will be available in any F-Droid client after adding the IzzyOnDroid repository.
 
-### Строгий режим
+## First Setup
 
-Скрывает вообще всё, кроме белого списка приложений, кодов и денежных операций. Подходит, если уведомлений слишком много и проще разрешать по одному, чем запрещать.
+### Reading Notifications — Required
 
-### Что было скрыто
+Click "Open Settings," find "Silent Notifications" in the list, and turn on the toggle.
 
-Главный экран для настройки. Здесь список снятых уведомлений с причиной — видно, какое именно слово сработало: «рекламное слово: «скидк»».
+**If the toggle is grayed out and the system reports a security restriction**, this is a security feature for Android 13+ apps installed outside the store. To turn it off, go to Settings → Apps → Silent Notifications → three dots in the upper right corner → **Allow Restricted Settings**. Then, go back and turn on the toggle.
 
-Если фильтр ошибся, под записью есть кнопка **«Больше не скрывать это приложение»** — она добавит его в белый список одним нажатием.
+### Access to Contacts — if you need silent calls
 
-Первые день-два стоит заглядывать сюда регулярно. Словари подобраны универсально, под ваши банки и магазины их почти наверняка придётся подправить.
+This is necessary to distinguish known numbers from unknown ones. Without it, the app considers everyone known and does not mute anyone.
 
-### Стоп-слова
+### Call screening app - if you need silent calls
 
-Ваши собственные слова, при которых уведомление скрывается. Работают жёстче встроенных правил: срабатывают, даже если в тексте есть сумма или слово «код».
-
-Например, если банк шлёт предложения кредитов — добавьте `кредит`. Уведомления «Одобрен кредит 500 000 ₽» исчезнут, а «Перевод 3000 ₽ от Ивана» останется, потому что стоп-слова ищутся отдельно от денежных операций.
-
-Слово ищется **по началу**: `скидк` поймает «скидки» и «скидка», `кредит` — «кредиты» и «кредитная». Внутри другого слова не сработает: `код` не совпадёт с «промокод».
-
-Экстренные оповещения и сообщения о заряде стоп-словами перекрыть нельзя — эта проверка идёт раньше.
-
-### Слова-исключения
-
-Обратная сторона: при этих словах уведомление не скрывается никогда. Сюда стоит внести названия банков, доставок и служб, которые для вас важны.
-
-### Выбрать приложения
-
-Белый список: уведомления отмеченных приложений не фильтруются вообще.
-
-Банковское приложение сюда лучше добавить сразу, а его рекламные рассылки отключить внутри самого банка — так ни один перевод точно не потеряется.
-
-### Приглушать незнакомые номера
-
-Звонок с номера, которого нет в контактах, проходит без звука и вибрации. Звонок **не сбрасывается**: он остаётся в журнале вызовов, отображается как пропущенный, человек может дозвониться повторно. Экстренные службы через эту проверку не проходят вовсе.
+Tap "Assign" and confirm. Note: this role is limited to one on your phone. While "Silent Notifications" is assigned to it, built-in caller ID or Truecaller won't work.
 
 ---
 
-## Что нужно понимать
+## How to use it
 
-**Реклама может мигнуть.** Android даёт приложениям доступ к уведомлению уже после того, как показал его. Баннер появляется на долю секунды и исчезает, звук может успеть проиграть. Убрать это без системных прав невозможно — ограничение самой системы, а не недоработка.
+### Hide ads
 
-**Фильтр по словам ошибается.** Он не понимает смысл, только ищет совпадения. Что-то нужное иногда скроется, что-то рекламное пройдёт. Журнал и стоп-слова существуют именно для того, чтобы это исправлять по ходу.
+Main switch. The app reads the text of each notification and removes those that look like ads.
 
-**Ничего никуда не отправляется.** Тексты уведомлений разбираются на телефоне, интернет приложению не нужен, журнал хранится локально. Разрешение на чтение SMS не запрашивается — приложение видит только текст уведомлений.
+**Never hidden:** emergency notifications, device status (battery, memory, overheating), calls, alarms, verification codes, and account transactions.
 
-**Не полагайтесь на это в критичных случаях.** Если ждёте важный звонок с незнакомого номера — выключите приглушение заранее.
+### Strict mode
+
+Hides everything except the whitelist of apps, codes, and money transactions. Suitable if you have too many notifications and it's easier to allow one at a time than to block them.
+
+### What was hidden
+
+Main screen for settings. Here's a list of removed notifications with the reason—you can see which word triggered them: "Advertising word: 'discount'."
+
+If the filter was incorrect, there's a "Don't hide this app anymore" button under the entry—it'll add it to your whitelist with one click.
+
+It's worth checking here regularly for the first day or two. The dictionaries are universally selected; you'll almost certainly need to adjust them for your banks and stores.
+
+### Stop Words
+
+Your own words that hide the notification. These are more stringent than built-in rules: they trigger even if the text contains an amount or the word "code."
+
+For example, if a bank sends loan offers, add "loan." Notifications like "Loan approved for 500,000 ₽" will disappear, but "Transfer of 3,000 ₽ from Ivan" will remain, because stop words are searched separately from monetary transactions.
+
+The word is searched **at the beginning**: `skidk` will match "discounts" and "discount", `credit` will match "loans" and "credit". It won't work within another word: `code` won't match "promocode".
+
+Emergency alerts and charging messages can't be suppressed with stop words—this check occurs first.
+
+### Exception Words
+
+The downside: these words never hide notifications. This is where you should add the names of banks, delivery companies, and services that are important to you.
+
+### Select Apps
+
+Whitelist: Notifications from selected apps are not filtered at all.
+
+It's best to add your banking app here immediately, and disable its promotional emails within the bank itself—this way, no transfers will be missed.
+
+### Mute Unknown Numbers
+
+Calls from numbers not in your contacts are silent and don't vibrate. The call isn't dropped: it remains in the call log, appears as missed, and the caller can try again. Emergency services don't go through this check at all.
 
 ---
 
-## Обновление
+## What you need to understand
 
-Скачайте новый APK из релизов и установите поверх. Настройки, стоп-слова и списки приложений сохранятся. Разрешения выдавать заново не придётся.
+**Ads may flash.** Android grants apps access to notifications after they've been displayed. The banner appears for a split second and then disappears, and the sound may play. Removing this without system permissions is impossible—it's a system limitation, not a bug.
 
-## Удаление
+**The word filter is incorrect.** It doesn't understand the meaning, only looks for matches. Sometimes something useful will be hidden, while something advertising will get through. The log and stop words exist precisely to correct this as it happens.
 
-Обычным способом, через долгое нажатие на иконку. Перед удалением стоит снять роль проверки звонков, если хотите вернуть встроенный определитель номера: Настройки → Приложения → Приложения по умолчанию → Проверка вызовов.
+**Nothing is sent anywhere.** Notification texts are parsed on the phone; the app doesn't need the internet; the log is stored locally. Permission to read SMS messages is not requested—the app only sees the notification text.
 
----
-
-Сборка из исходников, устройство проекта и логика правил описаны в [DEVELOPMENT.md](DEVELOPMENT.md).
+**Don't rely on this in critical situations.** If you're expecting an important call from an unknown number, turn off the mute feature in advance.
 
 ---
 
-## Лицензия
+## Update
 
-MIT — см. [LICENSE](LICENSE). Приложение бесплатное, без рекламы, аналитики и внутренних покупок.
-
-## Участие
-
-Нашли ошибку или хотите предложить слово для словаря — раздел «Справка» в приложении откроет заполненную форму, либо создайте [issue](../../issues) вручную.
-
-Словарь рекламных слов живёт в [dictionary.json](dictionary.json) и обновляется на устройствах без переустановки приложения. Правки принимаются через pull request.
+Download the new APK from the releases and install it over it. Settings, st
