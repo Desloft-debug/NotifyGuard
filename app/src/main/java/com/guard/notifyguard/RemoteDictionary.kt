@@ -58,7 +58,7 @@ object RemoteDictionary {
         if (!prefs.remoteDictEnabled) return EMPTY
         val raw = prefs.remoteDictJson
         if (raw.isBlank()) return EMPTY
-        return runCatching { parse(JSONObject(raw)) }.getOrDefault(EMPTY)
+        return runCatching { parse(JSONObject(raw), prefs.region) }.getOrDefault(EMPTY)
     }
 
     suspend fun sync(prefs: Prefs): Result<RemoteDict> = withContext(Dispatchers.IO) {
@@ -87,7 +87,7 @@ object RemoteDictionary {
                 require(body.length < 512 * 1024) { "Словарь слишком большой" }
 
                 val json = JSONObject(body)
-                val dict = parse(json)
+                val dict = parse(json, prefs.region)
                 require(!dict.isEmpty) { "Пустой словарь" }
 
                 prefs.remoteDictJson = body
@@ -100,15 +100,32 @@ object RemoteDictionary {
         }
     }
 
-    private fun parse(json: JSONObject): RemoteDict {
-        val block = words(json.optJSONArray("block"))
-            .filter { w -> PROTECTED_WORDS.none { it == w } }
-        val allow = words(json.optJSONArray("allow"))
+    /**
+     * Файл может содержать общие списки block/allow и разделы по регионам.
+     * Берём общие плюс раздел выбранного региона; при ALL — оба раздела.
+     */
+    private fun parse(json: JSONObject, region: Region): RemoteDict {
+        val sections = when (region) {
+            Region.RU -> listOf("ru")
+            Region.EN -> listOf("en")
+            Region.ALL -> listOf("ru", "en")
+        }
+
+        val block = ArrayList<String>()
+        val allow = ArrayList<String>()
+        block += words(json.optJSONArray("block"))
+        allow += words(json.optJSONArray("allow"))
+        for (name in sections) {
+            val sec = json.optJSONObject(name) ?: continue
+            block += words(sec.optJSONArray("block"))
+            allow += words(sec.optJSONArray("allow"))
+        }
+
         return RemoteDict(
             version = json.optInt("version", 0),
             updated = json.optString("updated"),
-            block = block,
-            allow = allow
+            block = block.distinct().filter { w -> w !in PROTECTED_WORDS },
+            allow = allow.distinct()
         )
     }
 

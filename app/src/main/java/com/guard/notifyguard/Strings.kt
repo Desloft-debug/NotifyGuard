@@ -190,7 +190,21 @@ data class Strings(
     val feedbackInclude: String,
     val feedbackIncludeHint: String,
     val feedbackNote: String,
-    val feedbackNoBrowser: String
+    val feedbackNoBrowser: String,
+
+    val welcomeTitle: String,
+    val welcomeText: String,
+    val regionTitle: String,
+    val regionHint: String,
+    val regionRu: String,
+    val regionRuHint: String,
+    val regionEn: String,
+    val regionEnHint: String,
+    val regionAll: String,
+    val regionAllHint: String,
+    val regionNote: String,
+    val continueBtn: String,
+    val groupPromoRegion: String
 )
 
 val RU = Strings(
@@ -379,7 +393,21 @@ val RU = Strings(
     feedbackInclude = "Приложить версию и модель",
     feedbackIncludeHint = "Версия приложения, версия Android, модель телефона. Без этого разобраться в ошибке сложнее",
     feedbackNote = "Приложение ничего не отправляет само: отправка происходит в браузере, вашими руками. Для этого нужна учётная запись GitHub.",
-    feedbackNoBrowser = "Не удалось открыть браузер — текст скопирован"
+    feedbackNoBrowser = "Не удалось открыть браузер — текст скопирован",
+
+    welcomeTitle = "Тихие уведомления",
+    welcomeText = "Приложение скрывает рекламные уведомления и приглушает звонки с незнакомых номеров. Начнём с одного вопроса.",
+    regionTitle = "Язык рекламы",
+    regionHint = "На каком языке вам приходят рекламные рассылки? Это влияет только на список рекламных слов.",
+    regionRu = "Русский",
+    regionRuHint = "Скидки, промокоды, кредиты, маркетплейсы",
+    regionEn = "English / Deutsch",
+    regionEnHint = "Sales, coupons, loans, marketplaces",
+    regionAll = "Оба",
+    regionAllHint = "Полный словарь, если рассылки приходят на двух языках",
+    regionNote = "Коды подтверждения, банковские операции, статусы доставки и экстренные оповещения распознаются на всех языках независимо от выбора. Поменять можно в любой момент.",
+    continueBtn = "Продолжить",
+    groupPromoRegion = "Реклама (ваш регион)"
 )
 
 val EN = Strings(
@@ -568,7 +596,21 @@ val EN = Strings(
     feedbackInclude = "Attach version and device",
     feedbackIncludeHint = "App version, Android version, phone model. Harder to debug without it",
     feedbackNote = "The app never sends anything by itself: submission happens in the browser, by you. A GitHub account is required.",
-    feedbackNoBrowser = "Couldn't open a browser — text copied instead"
+    feedbackNoBrowser = "Couldn't open a browser — text copied instead",
+
+    welcomeTitle = "Quiet Notifications",
+    welcomeText = "This app hides ad notifications and silences calls from numbers outside your contacts. One question first.",
+    regionTitle = "Language of the ads",
+    regionHint = "Which language do marketing messages reach you in? This only affects the list of advertising words.",
+    regionRu = "Русский",
+    regionRuHint = "Скидки, промокоды, кредиты, маркетплейсы",
+    regionEn = "English / Deutsch",
+    regionEnHint = "Sales, coupons, loans, marketplaces",
+    regionAll = "Both",
+    regionAllHint = "The full dictionary, if you get marketing in both languages",
+    regionNote = "Verification codes, bank activity, delivery updates and emergency alerts are recognised in every language regardless of this choice. You can change it any time.",
+    continueBtn = "Continue",
+    groupPromoRegion = "Advertising (your region)"
 )
 
 val LocalStrings = staticCompositionLocalOf { RU }

@@ -18,7 +18,10 @@ data class Snapshot(
     val blockWords: List<String>,
     val allowWords: List<String>,
     val remoteBlock: List<String>,
-    val remoteAllow: List<String>
+    val remoteAllow: List<String>,
+    val region: Region,
+    /** Рекламные слова выбранного региона — собираются один раз. */
+    val promoWords: List<String>
 )
 
 class Prefs(context: Context) {
@@ -46,6 +49,7 @@ class Prefs(context: Context) {
     /** Дешёвое чтение для сервисов. */
     fun snapshot(): Snapshot {
         cached?.let { return it }
+        val reg = region
         val remote = RemoteDictionary.cached(this)
         val s = Snapshot(
             filterEnabled = filterEnabled,
@@ -56,7 +60,9 @@ class Prefs(context: Context) {
             blockWords = customBlockWords.toList(),
             allowWords = customAllowWords.toList(),
             remoteBlock = remote.block,
-            remoteAllow = remote.allow
+            remoteAllow = remote.allow,
+            region = reg,
+            promoWords = Dictionaries.promoFor(reg)
         )
         cached = s
         return s
@@ -108,6 +114,25 @@ class Prefs(context: Context) {
     var remoteDictFetched: Long
         get() = sp.getLong(KEY_REMOTE_TIME, 0L)
         set(v) = sp.edit().putLong(KEY_REMOTE_TIME, v).apply()
+
+    /**
+     * Регион словаря. Выбирается при первом запуске:
+     * русские рекламные слова англоязычному пользователю только мешают.
+     */
+    var region: Region
+        get() = runCatching {
+            Region.valueOf(sp.getString(KEY_REGION, null) ?: defaultRegion().name)
+        }.getOrDefault(defaultRegion())
+        set(v) = sp.edit().putString(KEY_REGION, v.name).apply()
+
+    /** Показывать ли экран выбора региона. */
+    var regionChosen: Boolean
+        get() = sp.getBoolean(KEY_REGION_CHOSEN, false)
+        set(v) = sp.edit().putBoolean(KEY_REGION_CHOSEN, v).apply()
+
+    private fun defaultRegion(): Region =
+        if (java.util.Locale.getDefault().language.equals("ru", true)) Region.RU
+        else Region.EN
 
     /** Инструкция скрыта пользователем. */
     var onboardingDone: Boolean
@@ -205,6 +230,8 @@ class Prefs(context: Context) {
         private const val KEY_SEEN = "seen_apps"
         private const val KEY_SEEDED = "seeded_v2"
         private const val KEY_ONBOARDING = "onboarding_done"
+        private const val KEY_REGION = "region"
+        private const val KEY_REGION_CHOSEN = "region_chosen"
         private const val KEY_REMOTE_ON = "remote_dict_on"
         private const val KEY_REMOTE_JSON = "remote_dict_json"
         private const val KEY_REMOTE_ETAG = "remote_dict_etag"

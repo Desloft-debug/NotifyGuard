@@ -74,6 +74,7 @@ fun App() {
     var lang by remember(refresh) { mutableStateOf(prefs.lang) }
     var tab by remember { mutableStateOf(Tab.PROTECT) }
     var numberDialog by remember { mutableStateOf<String?>(null) }
+    var regionChosen by remember { mutableStateOf(prefs.regionChosen) }
 
     val systemDark = systemInDarkTheme()
     val dark = when (themeMode) {
@@ -89,6 +90,19 @@ fun App() {
 
     GuardTheme(dark) {
         CompositionLocalProvider(LocalStrings provides strings) {
+            if (!regionChosen) {
+                WelcomeScreen(
+                    initial = prefs.region,
+                    lang = lang,
+                    onLang = { lang = it; prefs.lang = it },
+                    onDone = { chosen ->
+                        prefs.region = chosen
+                        prefs.regionChosen = true
+                        regionChosen = true
+                    }
+                )
+                return@CompositionLocalProvider
+            }
             MainScaffold(
                 prefs = prefs,
                 refresh = refresh,
@@ -103,6 +117,120 @@ fun App() {
             )
             numberDialog?.let { num ->
                 NumberDialog(num) { numberDialog = null }
+            }
+        }
+    }
+}
+
+/** Первый запуск: выбор языка интерфейса и региона рекламного словаря. */
+@Composable
+private fun WelcomeScreen(
+    initial: Region,
+    lang: Lang,
+    onLang: (Lang) -> Unit,
+    onDone: (Region) -> Unit
+) {
+    val s = LocalStrings.current
+    var region by remember { mutableStateOf(initial) }
+
+    Surface(color = MaterialTheme.colorScheme.background) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(24.dp, 48.dp, 24.dp, 32.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            item {
+                Text(s.welcomeTitle, style = MaterialTheme.typography.headlineSmall)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    s.welcomeText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(20.dp))
+                SegmentedRow(
+                    listOf(s.langSystem, s.langRu, s.langEn), lang.ordinal
+                ) { onLang(Lang.entries[it]) }
+                Spacer(Modifier.height(24.dp))
+                Text(s.regionTitle, style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    s.regionHint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(6.dp))
+            }
+            items(
+                listOf(
+                    Triple(Region.RU, s.regionRu, s.regionRuHint),
+                    Triple(Region.EN, s.regionEn, s.regionEnHint),
+                    Triple(Region.ALL, s.regionAll, s.regionAllHint)
+                )
+            ) { (value, title, hint) ->
+                RegionCard(
+                    title = title,
+                    hint = hint,
+                    count = Dictionaries.promoSize(value),
+                    selected = region == value
+                ) { region = value }
+            }
+            item {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    s.regionNote,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(20.dp))
+                Button(
+                    onClick = { onDone(region) },
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(s.continueBtn) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RegionCard(
+    title: String,
+    hint: String,
+    count: Int,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    val bg by animateColorAsState(
+        if (selected) MaterialTheme.colorScheme.primaryContainer
+        else MaterialTheme.colorScheme.surface,
+        label = "regionbg"
+    )
+    Card(
+        colors = CardDefaults.cardColors(containerColor = bg),
+        shape = RoundedCornerShape(18.dp),
+        modifier = Modifier.fillMaxWidth().clickable { onClick() }
+    ) {
+        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleSmall)
+                Text(
+                    hint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    "$count",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            AnimatedVisibility(selected) {
+                Icon(
+                    Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
         }
     }
@@ -226,6 +354,7 @@ private fun ProtectScreen(
     var storeText by remember(refresh) { mutableStateOf(prefs.storeLogText) }
     var autoUpdate by remember(refresh) { mutableStateOf(prefs.updateCheckEnabled) }
     var allowed by remember(refresh) { mutableStateOf(prefs.allowedApps) }
+    var region by remember(refresh) { mutableStateOf(prefs.region) }
 
     val listenerOn = remember(refresh) { GuardNotificationListener.isEnabled(context) }
     val screeningOn = remember(refresh) { isCallScreener(context) }
@@ -404,6 +533,29 @@ private fun ProtectScreen(
                         modifier = Modifier.padding(top = 8.dp)
                     )
                 }
+            }
+        }
+
+        item {
+            Section(s.regionTitle) {
+                Text(
+                    s.regionHint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(10.dp))
+                SegmentedRow(
+                    listOf(s.regionRu, s.regionEn, s.regionAll), region.ordinal
+                ) {
+                    region = Region.entries[it]
+                    prefs.region = region
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "${s.groupPromo}: ${Dictionaries.promoSize(region)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
@@ -1014,13 +1166,14 @@ private fun ReadyWordsTab(prefs: Prefs) {
     var failed by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf<String?>(null) }
 
+    val region = remember { prefs.region }
     val groups = listOf(
-        s.groupEmergency to FilterRules.EMERGENCY_WORDS,
-        s.groupSystem to FilterRules.SYSTEM_WORDS,
-        s.groupDelivery to FilterRules.DELIVERY_WORDS,
-        s.groupCode to FilterRules.CODE_WORDS,
-        s.groupMoney to FilterRules.MONEY_WORDS,
-        s.groupPromo to FilterRules.PROMO_WORDS
+        s.groupEmergency to Dictionaries.EMERGENCY,
+        s.groupSystem to Dictionaries.SYSTEM,
+        s.groupDelivery to Dictionaries.DELIVERY,
+        s.groupCode to Dictionaries.CODE,
+        s.groupMoney to Dictionaries.MONEY,
+        s.groupPromoRegion to Dictionaries.promoFor(region)
     )
 
     LazyColumn(
