@@ -1,0 +1,25 @@
+Quiet Notifications reads the text of incoming notifications and dismisses the ones that look like advertising. Verification codes, account activity, personal messages, delivery updates, device warnings and emergency alerts stay visible.
+
+A separate switch silences calls from numbers that are not in your contacts. Such a call rings without sound or vibration, but it is not rejected: it still appears in the call log and as a missed call.
+
+<b>What it does</b>
+
+* Filters ad notifications by word lists in Russian, English and German
+* Never touches emergency alerts, alarms, calls or device status
+* Keeps verification codes and bank transfers visible, even when the same message also contains promotional text
+* Recognises personal chat messages and leaves them alone
+* Silences unknown callers and shows what is known about a number offline: type, region, approximate carrier, and whether neighbouring numbers in the same range have been calling
+* Log of everything hidden, with the exact word that triggered it, and one tap to whitelist an app
+* Your own word lists take priority over the bundled ones
+
+<b>Privacy</b>
+
+All notification text is processed on the device. There is no analytics, no account, no server. The network is used only to check for updates on GitHub and to fetch the shared word list, and both can be turned off. The app does not request SMS or call log permissions; contacts access is used solely to tell known numbers from unknown ones. The log is excluded from cloud backup, and storing notification text in it can be disabled.
+
+<b>Known limits</b>
+
+Android hands a notification to apps only after showing it, so an ad banner may flash for a fraction of a second before disappearing. This cannot be avoided without system privileges.
+
+The filter matches words, it does not understand meaning. It will occasionally hide something wanted or let an ad through; the log and your own word lists exist to correct that.
+
+The call screening role is exclusive on Android: while this app holds it, your built-in caller ID will not work.

@@ -12,8 +12,8 @@ android {
         applicationId = "com.guard.notifyguard"
         minSdk = 29
         targetSdk = 34
-        versionCode = 8
-        versionName = "2.1"
+        versionCode = 9
+        versionName = "2.2"
 
         // Репозиторий, откуда берутся обновления.
         // Если сменится имя аккаунта — поправить здесь.
@@ -22,6 +22,13 @@ android {
 
         // В APK попадают только нужные локали
         resourceConfigurations += setOf("en", "ru")
+    }
+
+    // IzzyOnDroid и F-Droid не принимают APK с зашифрованным блоком
+    // метаданных зависимостей: прочитать его может только Google.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
     }
 
     signingConfigs {

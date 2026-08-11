@@ -1,0 +1,6 @@
+* Bottom navigation with four tabs instead of one long screen
+* Built-in setup guide that can be hidden once everything is configured
+* Offline caller information for silenced calls: type, region, carrier, mass-calling signs
+* Feedback form that opens a pre-filled GitHub issue
+* Update check is now off by default and must be enabled explicitly
+* Own icon, MIT license

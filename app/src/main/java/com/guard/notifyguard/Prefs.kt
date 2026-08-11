@@ -78,9 +78,14 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_STORE_TEXT, true)
         set(v) = sp.edit().putBoolean(KEY_STORE_TEXT, v).apply()
 
-    /** Проверять ли обновления на GitHub при открытии приложения. */
+    /**
+     * Проверять ли обновления на GitHub при открытии приложения.
+     * По умолчанию выключено: скачивание чего-либо из сети должно быть
+     * осознанным решением пользователя, а не поведением по умолчанию.
+     * Этого же требуют правила F-Droid и IzzyOnDroid.
+     */
     var updateCheckEnabled: Boolean
-        get() = sp.getBoolean(KEY_UPDATE_CHECK, true)
+        get() = sp.getBoolean(KEY_UPDATE_CHECK, false)
         set(v) = sp.edit().putBoolean(KEY_UPDATE_CHECK, v).apply()
 
     var lastUpdateCheck: Long

@@ -1,0 +1,1 @@
+Hides ad notifications and silences calls from numbers outside your contacts.

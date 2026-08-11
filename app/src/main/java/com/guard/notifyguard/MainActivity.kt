@@ -609,7 +609,7 @@ private fun FeedbackCard(notify: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
     var attach by remember { mutableStateOf(true) }
 
-    val titles = listOf(s.feedbackKindBug, s.feedbackKindIdea, s.feedbackKindWord)
+    val titles = listOf(s.feedbackKindBug, s.feedbackKindIdea)
 
     fun body(): String = buildString {
         appendLine(text.trim())
