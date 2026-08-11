@@ -5,6 +5,7 @@ import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -20,10 +21,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -50,7 +52,12 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Screen { HOME, DICT, LOG }
+private enum class Tab(val icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    PROTECT(Icons.Filled.Lock),
+    DICT(Icons.Filled.Search),
+    LOG(Icons.Filled.List),
+    HELP(Icons.Filled.Info)
+}
 
 /* ---------------------------------- Каркас ---------------------------------- */
 
@@ -64,7 +71,8 @@ fun App() {
 
     var themeMode by remember(refresh) { mutableStateOf(prefs.themeMode) }
     var lang by remember(refresh) { mutableStateOf(prefs.lang) }
-    var screen by remember { mutableStateOf(Screen.HOME) }
+    var tab by remember { mutableStateOf(Tab.PROTECT) }
+    var numberDialog by remember { mutableStateOf<String?>(null) }
 
     val systemDark = systemInDarkTheme()
     val dark = when (themeMode) {
@@ -80,33 +88,99 @@ fun App() {
 
     GuardTheme(dark) {
         CompositionLocalProvider(LocalStrings provides strings) {
-            AnimatedContent(
-                targetState = screen,
-                transitionSpec = {
-                    val forward = targetState.ordinal > initialState.ordinal
-                    val offset = if (forward) 1 else -1
-                    (slideInHorizontally(tween(280)) { it / 6 * offset } +
-                        fadeIn(tween(220))) togetherWith
-                        (slideOutHorizontally(tween(280)) { -it / 6 * offset } +
-                            fadeOut(tween(160)))
-                },
-                label = "screen"
-            ) { current ->
-                when (current) {
-                    Screen.HOME -> HomeScreen(
-                        prefs = prefs,
-                        refresh = refresh,
-                        onRefresh = { refresh++ },
-                        themeMode = themeMode,
-                        onTheme = { themeMode = it; prefs.themeMode = it },
-                        lang = lang,
-                        onLang = { lang = it; prefs.lang = it },
-                        onOpenDict = { screen = Screen.DICT },
-                        onOpenLog = { screen = Screen.LOG }
+            MainScaffold(
+                prefs = prefs,
+                refresh = refresh,
+                onRefresh = { refresh++ },
+                tab = tab,
+                onTab = { tab = it },
+                themeMode = themeMode,
+                onTheme = { themeMode = it; prefs.themeMode = it },
+                lang = lang,
+                onLang = { lang = it; prefs.lang = it },
+                onOpenNumber = { numberDialog = it }
+            )
+            numberDialog?.let { num ->
+                NumberDialog(num) { numberDialog = null }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MainScaffold(
+    prefs: Prefs,
+    refresh: Int,
+    onRefresh: () -> Unit,
+    tab: Tab,
+    onTab: (Tab) -> Unit,
+    themeMode: ThemeMode,
+    onTheme: (ThemeMode) -> Unit,
+    lang: Lang,
+    onLang: (Lang) -> Unit,
+    onOpenNumber: (String) -> Unit
+) {
+    val s = LocalStrings.current
+    val titles = mapOf(
+        Tab.PROTECT to s.navProtect,
+        Tab.DICT to s.dictTitle,
+        Tab.LOG to s.logTitle,
+        Tab.HELP to s.navHelp
+    )
+    val labels = mapOf(
+        Tab.PROTECT to s.navProtect,
+        Tab.DICT to s.navDict,
+        Tab.LOG to s.navLog,
+        Tab.HELP to s.navHelp
+    )
+
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        if (tab == Tab.PROTECT) s.appTitle else titles[tab].orEmpty(),
+                        style = MaterialTheme.typography.headlineSmall
                     )
-                    Screen.DICT -> DictScreen(prefs) { screen = Screen.HOME }
-                    Screen.LOG -> LogScreen(prefs) { screen = Screen.HOME }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        },
+        bottomBar = {
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                Tab.entries.forEach { t ->
+                    NavigationBarItem(
+                        selected = tab == t,
+                        onClick = { onTab(t) },
+                        icon = { Icon(t.icon, contentDescription = labels[t]) },
+                        label = { Text(labels[t].orEmpty(), maxLines = 1) }
+                    )
                 }
+            }
+        }
+    ) { padding ->
+        AnimatedContent(
+            targetState = tab,
+            modifier = Modifier.padding(padding).fillMaxSize(),
+            transitionSpec = {
+                val forward = targetState.ordinal > initialState.ordinal
+                val dir = if (forward) 1 else -1
+                (slideInHorizontally(tween(240)) { it / 8 * dir } + fadeIn(tween(200))) togetherWith
+                    (slideOutHorizontally(tween(240)) { -it / 8 * dir } + fadeOut(tween(140)))
+            },
+            label = "tabs"
+        ) { current ->
+            when (current) {
+                Tab.PROTECT -> ProtectScreen(
+                    prefs, refresh, onRefresh, themeMode, onTheme, lang, onLang
+                )
+                Tab.DICT -> DictScreen(prefs)
+                Tab.LOG -> LogScreen(prefs, onOpenNumber)
+                Tab.HELP -> HelpScreen(prefs, refresh, onRefresh)
             }
         }
     }
@@ -119,20 +193,17 @@ private fun systemInDarkTheme(): Boolean {
         android.content.res.Configuration.UI_MODE_NIGHT_YES
 }
 
-/* ------------------------------- Главный экран ------------------------------ */
+/* ------------------------------- Экран защиты ------------------------------- */
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HomeScreen(
+private fun ProtectScreen(
     prefs: Prefs,
     refresh: Int,
     onRefresh: () -> Unit,
     themeMode: ThemeMode,
     onTheme: (ThemeMode) -> Unit,
     lang: Lang,
-    onLang: (Lang) -> Unit,
-    onOpenDict: () -> Unit,
-    onOpenLog: () -> Unit
+    onLang: (Lang) -> Unit
 ) {
     val s = LocalStrings.current
     val context = LocalContext.current
@@ -144,17 +215,12 @@ private fun HomeScreen(
     var storeText by remember(refresh) { mutableStateOf(prefs.storeLogText) }
     var autoUpdate by remember(refresh) { mutableStateOf(prefs.updateCheckEnabled) }
     var allowed by remember(refresh) { mutableStateOf(prefs.allowedApps) }
-    val wordsTotal = remember(refresh) {
-        prefs.customBlockWords.size + prefs.customAllowWords.size
-    }
 
     val listenerOn = remember(refresh) { GuardNotificationListener.isEnabled(context) }
     val screeningOn = remember(refresh) { isCallScreener(context) }
     val contactsOn = remember(refresh) { ContactsRepo.hasPermission(context) }
 
     var showPicker by remember { mutableStateOf(false) }
-
-    // Состояние обновления
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
 
     suspend fun check(manual: Boolean) {
@@ -164,14 +230,13 @@ private fun HomeScreen(
             .onSuccess { info ->
                 updateState = if (Updater.isNewer(BuildConfig.VERSION_NAME, info.version)) {
                     UpdateState.Available(info)
-                } else {
-                    if (manual) UpdateState.UpToDate else UpdateState.Idle
-                }
+                } else if (manual) UpdateState.UpToDate else UpdateState.Idle
             }
             .onFailure { updateState = if (manual) UpdateState.Failed else UpdateState.Idle }
     }
 
     LaunchedEffect(Unit) {
+        if (RemoteDictionary.shouldSync(prefs)) RemoteDictionary.sync(prefs)
         if (Updater.shouldCheck(prefs)) check(manual = false)
     }
 
@@ -182,220 +247,207 @@ private fun HomeScreen(
         ActivityResultContracts.StartActivityForResult()
     ) { onRefresh() }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text(s.appTitle, style = MaterialTheme.typography.headlineSmall) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp, 4.dp, 16.dp, 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            AnimatedVisibility(
+                visible = updateState is UpdateState.Available,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                (updateState as? UpdateState.Available)?.let { st ->
+                    UpdateBanner(st.info) {
+                        scope.launch {
+                            updateState = UpdateState.Downloading(0f)
+                            Updater.download(context, st.info) { p ->
+                                updateState = UpdateState.Downloading(p)
+                            }.onSuccess { updateState = UpdateState.Ready(it) }
+                                .onFailure { updateState = UpdateState.Failed }
+                        }
+                    }
+                }
+            }
         }
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier.padding(padding).fillMaxSize(),
-            contentPadding = PaddingValues(16.dp, 4.dp, 16.dp, 32.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            item {
-                AnimatedVisibility(
-                    visible = updateState is UpdateState.Available,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
+
+        item {
+            AnimatedVisibility(
+                visible = updateState is UpdateState.Downloading ||
+                    updateState is UpdateState.Ready,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                DownloadCard(updateState) { file ->
+                    if (Updater.canInstall(context)) Updater.install(context, file)
+                    else Updater.requestInstallPermission(context)
+                }
+            }
+        }
+
+        item {
+            AnimatedVisibility(
+                visible = !listenerOn,
+                enter = fadeIn() + expandVertically(),
+                exit = fadeOut() + shrinkVertically()
+            ) {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    (updateState as? UpdateState.Available)?.let { st ->
-                        UpdateBanner(
-                            info = st.info,
-                            onDownload = {
-                                scope.launch {
-                                    updateState = UpdateState.Downloading(0f)
-                                    Updater.download(context, st.info) { p ->
-                                        updateState = UpdateState.Downloading(p)
-                                    }.onSuccess { f ->
-                                        updateState = UpdateState.Ready(f)
-                                    }.onFailure { updateState = UpdateState.Failed }
-                                }
-                            }
+                    Column(Modifier.padding(18.dp)) {
+                        Text(
+                            s.accessNotificationsOff,
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
                         )
+                        Spacer(Modifier.height(10.dp))
+                        Button(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                )
+                            },
+                            shape = RoundedCornerShape(14.dp)
+                        ) { Text(s.actionOpenSettings) }
                     }
                 }
             }
+        }
 
-            item {
-                AnimatedVisibility(
-                    visible = updateState is UpdateState.Downloading ||
-                        updateState is UpdateState.Ready,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
+        item {
+            Section(s.accessTitle) {
+                StatusRow(
+                    s.accessNotifications, listenerOn,
+                    if (listenerOn) s.accessNotificationsOn else s.accessNotificationsOff,
+                    s.actionOpenSettings
                 ) {
-                    DownloadCard(
-                        state = updateState,
-                        onInstall = { file ->
-                            if (Updater.canInstall(context)) Updater.install(context, file)
-                            else Updater.requestInstallPermission(context)
-                        }
-                    )
+                    context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 }
+                StatusRow(
+                    s.accessCalls, screeningOn,
+                    if (screeningOn) s.accessCallsOn else s.accessCallsOff,
+                    s.actionAssign
+                ) { requestScreeningRole(context)?.let { roleLauncher.launch(it) } }
+                StatusRow(
+                    s.accessContacts, contactsOn,
+                    if (contactsOn) s.accessContactsOn else s.accessContactsOff,
+                    s.actionGrant
+                ) { contactsLauncher.launch(Manifest.permission.READ_CONTACTS) }
             }
+        }
 
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    NavTile(
-                        title = s.openDict,
-                        subtitle = "$wordsTotal ${s.wordsCount}",
-                        modifier = Modifier.weight(1f),
-                        onClick = onOpenDict
-                    )
-                    NavTile(
-                        title = s.openLog,
-                        subtitle = s.openLogHint,
-                        modifier = Modifier.weight(1f),
-                        onClick = onOpenLog
-                    )
+        item {
+            Section(s.notificationsTitle) {
+                SwitchRow(s.hideAds, s.hideAdsHint, filterEnabled) {
+                    filterEnabled = it; prefs.filterEnabled = it
                 }
-            }
-
-            item {
-                Section(s.accessTitle) {
-                    StatusRow(
-                        s.accessNotifications, listenerOn,
-                        if (listenerOn) s.accessNotificationsOn else s.accessNotificationsOff,
-                        s.actionOpenSettings
-                    ) {
-                        context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                    }
-                    StatusRow(
-                        s.accessCalls, screeningOn,
-                        if (screeningOn) s.accessCallsOn else s.accessCallsOff,
-                        s.actionAssign
-                    ) {
-                        requestScreeningRole(context)?.let { roleLauncher.launch(it) }
-                    }
-                    StatusRow(
-                        s.accessContacts, contactsOn,
-                        if (contactsOn) s.accessContactsOn else s.accessContactsOff,
-                        s.actionGrant
-                    ) {
-                        contactsLauncher.launch(Manifest.permission.READ_CONTACTS)
-                    }
+                SwitchRow(s.strictMode, s.strictModeHint, strictMode) {
+                    strictMode = it; prefs.strictMode = it
                 }
-            }
-
-            item {
-                Section(s.notificationsTitle) {
-                    SwitchRow(s.hideAds, s.hideAdsHint, filterEnabled) {
-                        filterEnabled = it; prefs.filterEnabled = it
-                    }
-                    SwitchRow(s.strictMode, s.strictModeHint, strictMode) {
-                        strictMode = it; prefs.strictMode = it
-                    }
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "${s.whitelistCount}: ${allowed.size}",
-                            Modifier.weight(1f),
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        FilledTonalButton(onClick = { showPicker = true }) {
-                            Text(s.chooseApps)
-                        }
-                    }
-                }
-            }
-
-            item {
-                Section(s.callsTitle) {
-                    SwitchRow(s.silenceUnknown, s.silenceUnknownHint, silenceCalls) {
-                        silenceCalls = it; prefs.silenceUnknownCalls = it
-                    }
-                    AnimatedVisibility(
-                        visible = silenceCalls && !screeningOn,
-                        enter = fadeIn() + expandVertically(),
-                        exit = fadeOut() + shrinkVertically()
-                    ) {
-                        Text(
-                            s.callsWarning,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
-                    }
-                }
-            }
-
-            item {
-                Section(s.appearanceTitle) {
-                    Text(s.theme, style = MaterialTheme.typography.titleSmall)
-                    Spacer(Modifier.height(8.dp))
-                    SegmentedRow(
-                        listOf(s.themeSystem, s.themeLight, s.themeDark),
-                        themeMode.ordinal
-                    ) { onTheme(ThemeMode.entries[it]) }
-                    Spacer(Modifier.height(16.dp))
-                    Text(s.language, style = MaterialTheme.typography.titleSmall)
-                    Spacer(Modifier.height(8.dp))
-                    SegmentedRow(
-                        listOf(s.langSystem, s.langRu, s.langEn),
-                        lang.ordinal
-                    ) { onLang(Lang.entries[it]) }
-                }
-            }
-
-            item {
-                Section(s.updateTitle) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        "${s.currentVersion}: ${BuildConfig.VERSION_NAME}",
+                        "${s.whitelistCount}: ${allowed.size}",
+                        Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    Spacer(Modifier.height(6.dp))
-                    SwitchRow(s.updateAuto, s.updateAutoHint, autoUpdate) {
-                        autoUpdate = it; prefs.updateCheckEnabled = it
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        FilledTonalButton(
-                            onClick = { scope.launch { check(manual = true) } },
-                            enabled = updateState !is UpdateState.Checking
-                        ) {
-                            Text(
-                                if (updateState is UpdateState.Checking) s.updateChecking
-                                else s.updateCheck
-                            )
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        AnimatedContent(updateState, label = "update") { st ->
-                            val msg = when (st) {
-                                is UpdateState.UpToDate -> s.updateUpToDate
-                                is UpdateState.Failed -> s.updateFailed
-                                else -> ""
-                            }
-                            if (msg.isNotEmpty()) {
-                                Text(
-                                    msg,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(10.dp))
+                    FilledTonalButton(onClick = { showPicker = true }) { Text(s.chooseApps) }
+                }
+            }
+        }
+
+        item {
+            Section(s.callsTitle) {
+                SwitchRow(s.silenceUnknown, s.silenceUnknownHint, silenceCalls) {
+                    silenceCalls = it; prefs.silenceUnknownCalls = it
+                }
+                AnimatedVisibility(
+                    visible = silenceCalls && !screeningOn,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
                     Text(
-                        s.updateNetworkNote,
+                        s.callsWarning,
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 8.dp)
                     )
                 }
             }
+        }
 
-            item {
-                Section(s.privacyTitle) {
-                    SwitchRow(s.storeText, s.storeTextHint, storeText) {
-                        storeText = it; prefs.storeLogText = it
+        item {
+            Section(s.appearanceTitle) {
+                Text(s.theme, style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(8.dp))
+                SegmentedRow(
+                    listOf(s.themeSystem, s.themeLight, s.themeDark), themeMode.ordinal
+                ) { onTheme(ThemeMode.entries[it]) }
+                Spacer(Modifier.height(16.dp))
+                Text(s.language, style = MaterialTheme.typography.titleSmall)
+                Spacer(Modifier.height(8.dp))
+                SegmentedRow(
+                    listOf(s.langSystem, s.langRu, s.langEn), lang.ordinal
+                ) { onLang(Lang.entries[it]) }
+            }
+        }
+
+        item {
+            Section(s.updateTitle) {
+                Text(
+                    "${s.currentVersion}: ${BuildConfig.VERSION_NAME}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(6.dp))
+                SwitchRow(s.updateAuto, s.updateAutoHint, autoUpdate) {
+                    autoUpdate = it; prefs.updateCheckEnabled = it
+                }
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    FilledTonalButton(
+                        onClick = { scope.launch { check(manual = true) } },
+                        enabled = updateState !is UpdateState.Checking
+                    ) {
+                        Text(
+                            if (updateState is UpdateState.Checking) s.updateChecking
+                            else s.updateCheck
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    val msg = when (updateState) {
+                        is UpdateState.UpToDate -> s.updateUpToDate
+                        is UpdateState.Failed -> s.updateFailed
+                        else -> ""
+                    }
+                    AnimatedVisibility(msg.isNotEmpty()) {
+                        Text(
+                            msg,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
+            }
+        }
+
+        item {
+            Section(s.privacyTitle) {
+                SwitchRow(s.storeText, s.storeTextHint, storeText) {
+                    storeText = it; prefs.storeLogText = it
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    s.updateNetworkNote,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }
@@ -407,6 +459,321 @@ private fun HomeScreen(
             onToggle = { prefs.toggleAllowed(it); allowed = prefs.allowedApps },
             onDismiss = { showPicker = false }
         )
+    }
+}
+
+/* ------------------------------- Экран справки ------------------------------ */
+
+@Composable
+private fun HelpScreen(prefs: Prefs, refresh: Int, onRefresh: () -> Unit) {
+    val s = LocalStrings.current
+    val context = LocalContext.current
+
+    var hidden by remember(refresh) { mutableStateOf(prefs.onboardingDone) }
+    val listenerOn = remember(refresh) { GuardNotificationListener.isEnabled(context) }
+    val screeningOn = remember(refresh) { isCallScreener(context) }
+    val contactsOn = remember(refresh) { ContactsRepo.hasPermission(context) }
+    val allDone = listenerOn && screeningOn && contactsOn
+
+    val contactsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { onRefresh() }
+    val roleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { onRefresh() }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp, 4.dp, 16.dp, 24.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp)
+    ) {
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    s.setupTitle,
+                    Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                TextButton(onClick = {
+                    hidden = !hidden
+                    prefs.onboardingDone = hidden
+                }) { Text(if (hidden) s.setupShow else s.setupHide) }
+            }
+        }
+
+        if (hidden) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (allDone)
+                            MaterialTheme.colorScheme.primaryContainer
+                        else MaterialTheme.colorScheme.surface
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            if (allDone) Icons.Filled.Check else Icons.Filled.Info,
+                            contentDescription = null,
+                            tint = if (allDone) MaterialTheme.colorScheme.onPrimaryContainer
+                            else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Text(
+                            if (allDone) s.setupDone else s.setupIntro,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (allDone) MaterialTheme.colorScheme.onPrimaryContainer
+                            else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        } else {
+            item {
+                Text(
+                    s.setupIntro,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            item {
+                SetupStep(1, s.setupStep1, s.setupStep1Text, listenerOn, s.actionOpenSettings) {
+                    context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                }
+            }
+            item {
+                SetupStep(2, s.setupStep2, s.setupStep2Text, contactsOn, s.actionGrant) {
+                    contactsLauncher.launch(Manifest.permission.READ_CONTACTS)
+                }
+            }
+            item {
+                SetupStep(3, s.setupStep3, s.setupStep3Text, screeningOn, s.actionAssign) {
+                    requestScreeningRole(context)?.let { roleLauncher.launch(it) }
+                }
+            }
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                    ),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(s.setupRestricted, style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            s.setupRestrictedText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+            item {
+                FilledTonalButton(
+                    onClick = { hidden = true; prefs.onboardingDone = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(s.setupHide) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SetupStep(
+    number: Int,
+    title: String,
+    text: String,
+    done: Boolean,
+    action: String,
+    onClick: () -> Unit
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(20.dp),
+        modifier = Modifier.fillMaxWidth().animateContentSize()
+    ) {
+        Column(Modifier.padding(18.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val bg by animateColorAsState(
+                    if (done) MaterialTheme.colorScheme.secondary
+                    else MaterialTheme.colorScheme.surfaceVariant,
+                    label = "stepdot"
+                )
+                Box(
+                    Modifier.size(28.dp).clip(RoundedCornerShape(14.dp)).background(bg),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (done) {
+                        Icon(
+                            Icons.Filled.Check,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    } else {
+                        Text("$number", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+                Spacer(Modifier.width(12.dp))
+                Text(title, style = MaterialTheme.typography.titleSmall)
+            }
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            AnimatedVisibility(!done) {
+                Column {
+                    Spacer(Modifier.height(12.dp))
+                    Button(onClick = onClick, shape = RoundedCornerShape(14.dp)) {
+                        Text(action)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* ------------------------------- Карточка номера ---------------------------- */
+
+@Composable
+private fun NumberDialog(number: String, onDismiss: () -> Unit) {
+    val s = LocalStrings.current
+    val context = LocalContext.current
+    val history = remember { GuardLog.readCalls(context) }
+    val info = remember(number) { NumberLookup.analyze(number, history) }
+
+    val riskText = when (info.risk) {
+        RiskLevel.LOW -> s.riskLow
+        RiskLevel.MEDIUM -> s.riskMedium
+        RiskLevel.HIGH -> s.riskHigh
+        RiskLevel.UNKNOWN -> s.riskUnknown
+    }
+    val riskColor = when (info.risk) {
+        RiskLevel.LOW -> MaterialTheme.colorScheme.secondary
+        RiskLevel.MEDIUM -> MaterialTheme.colorScheme.primary
+        RiskLevel.HIGH -> MaterialTheme.colorScheme.error
+        RiskLevel.UNKNOWN -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    val kindText = when (info.kind) {
+        NumberKind.MOBILE -> s.kindMobile
+        NumberKind.LANDLINE -> s.kindLandline
+        NumberKind.TOLL_FREE -> s.kindTollFree
+        NumberKind.PREMIUM -> s.kindPremium
+        NumberKind.SHORT -> s.kindShort
+        NumberKind.HIDDEN -> s.kindHidden
+        NumberKind.FOREIGN -> s.kindForeign
+        NumberKind.UNKNOWN -> s.kindUnknown
+    }
+    val signalText = mapOf(
+        "premium" to s.sigPremium, "tollfree" to s.sigTollFree,
+        "landline" to s.sigLandline, "foreign" to s.sigForeign,
+        "repeated" to s.sigRepeated, "blockcalling" to s.sigBlockCalling,
+        "length" to s.sigLength, "hidden" to s.sigHidden, "short" to s.sigShort
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        confirmButton = { TextButton(onClick = onDismiss) { Text(s.done) } },
+        shape = RoundedCornerShape(20.dp),
+        title = { Text(info.raw.ifBlank { s.kindHidden }) },
+        text = {
+            LazyColumn(Modifier.heightIn(max = 460.dp)) {
+                item {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = riskColor.copy(alpha = .12f)),
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(Modifier.padding(14.dp)) {
+                            Text(
+                                s.numberRisk,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                riskText,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = riskColor
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+                item {
+                    InfoRow(s.numberKind, kindText)
+                    if (info.country.isNotBlank()) InfoRow(s.numberCountry, info.country)
+                    if (info.region.isNotBlank()) InfoRow(s.numberRegion, info.region)
+                    if (info.operator.isNotBlank()) InfoRow(s.numberOperator, info.operator)
+                    Spacer(Modifier.height(10.dp))
+                }
+                items(info.signals) { key ->
+                    signalText[key]?.let {
+                        Row(Modifier.padding(vertical = 4.dp)) {
+                            Text("• ", style = MaterialTheme.typography.bodySmall)
+                            Text(it, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+                item {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        s.numberDisclaimer,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        s.numberAddContact,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (info.e164.isNotBlank()) {
+                    item {
+                        Spacer(Modifier.height(14.dp))
+                        Text(s.numberCheckOnline, style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            s.numberCheckWarning,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    items(NumberLookup.lookupLinks(info.e164)) { (name, url) ->
+                        TextButton(
+                            onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                    )
+                                }
+                            },
+                            contentPadding = PaddingValues(0.dp)
+                        ) { Text(name) }
+                    }
+                }
+            }
+        }
+    )
+}
+
+@Composable
+private fun InfoRow(label: String, value: String) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        Text(
+            label,
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(value, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
@@ -485,35 +852,20 @@ private fun DownloadCard(state: UpdateState, onInstall: (File) -> Unit) {
 
 /* -------------------------------- Экран словаря ----------------------------- */
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DictScreen(prefs: Prefs, onBack: () -> Unit) {
+private fun DictScreen(prefs: Prefs) {
     val s = LocalStrings.current
     var tab by remember { mutableIntStateOf(0) }
     var blockWords by remember { mutableStateOf(prefs.customBlockWords) }
     var allowWords by remember { mutableStateOf(prefs.customAllowWords) }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text(s.dictTitle) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = s.back)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        }
-    ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
+    run {
+        Column(Modifier.fillMaxSize()) {
             TabRow(tab, containerColor = MaterialTheme.colorScheme.background) {
                 Tab(tab == 0, { tab = 0 }, text = { Text(s.tabStop) })
                 Tab(tab == 1, { tab = 1 }, text = { Text(s.tabAllow) })
                 Tab(tab == 2, { tab = 2 }, text = { Text(s.tabBuiltIn) })
+                Tab(tab == 3, { tab = 3 }, text = { Text(s.tabOnline) })
             }
             AnimatedContent(
                 targetState = tab,
@@ -535,7 +887,8 @@ private fun DictScreen(prefs: Prefs, onBack: () -> Unit) {
                         onAdd = { prefs.addAllowWord(it); allowWords = prefs.customAllowWords },
                         onRemove = { prefs.removeAllowWord(it); allowWords = prefs.customAllowWords }
                     )
-                    else -> BuiltInList()
+                    2 -> BuiltInList()
+                    else -> OnlineDictTab(prefs)
                 }
             }
         }
@@ -625,6 +978,124 @@ private fun WordList(
 }
 
 @Composable
+private fun OnlineDictTab(prefs: Prefs) {
+    val s = LocalStrings.current
+    val scope = rememberCoroutineScope()
+
+    var enabled by remember { mutableStateOf(prefs.remoteDictEnabled) }
+    var dict by remember { mutableStateOf(RemoteDictionary.cached(prefs)) }
+    var fetched by remember { mutableLongStateOf(prefs.remoteDictFetched) }
+    var busy by remember { mutableStateOf(false) }
+    var failed by remember { mutableStateOf(false) }
+
+    LazyColumn(
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Text(
+                s.onlineHint,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        item {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                shape = RoundedCornerShape(18.dp),
+                modifier = Modifier.fillMaxWidth().animateContentSize()
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    SwitchRow(s.onlineEnabled, s.onlineEnabledHint, enabled) {
+                        enabled = it
+                        prefs.remoteDictEnabled = it
+                        dict = RemoteDictionary.cached(prefs)
+                    }
+                    AnimatedVisibility(enabled) {
+                        Column {
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                "${s.onlineVersion}: ${dict.version}",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                "${s.onlineUpdated}: " + if (fetched == 0L) s.onlineNever
+                                else LogEntry("", "", "", fetched).timeText(),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "${dict.block.size} ${s.onlineBlocked} · " +
+                                    "${dict.allow.size} ${s.onlineAllowed}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(12.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                FilledTonalButton(
+                                    onClick = {
+                                        scope.launch {
+                                            busy = true; failed = false
+                                            RemoteDictionary.sync(prefs)
+                                                .onSuccess {
+                                                    dict = it
+                                                    fetched = prefs.remoteDictFetched
+                                                }
+                                                .onFailure { failed = true }
+                                            busy = false
+                                        }
+                                    },
+                                    enabled = !busy
+                                ) { Text(if (busy) s.onlineSyncing else s.onlineSync) }
+                                Spacer(Modifier.width(12.dp))
+                                AnimatedVisibility(failed) {
+                                    Text(
+                                        s.onlineFailed,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        item {
+            Text(
+                s.onlineSafety,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (enabled && dict.block.isNotEmpty()) {
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    shape = RoundedCornerShape(18.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(s.onlineBlocked, style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            dict.block.joinToString(" · "),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun BuiltInList() {
     val s = LocalStrings.current
     val groups = listOf(
@@ -689,9 +1160,8 @@ private fun BuiltInList() {
 
 /* -------------------------------- Экран журнала ----------------------------- */
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LogScreen(prefs: Prefs, onBack: () -> Unit) {
+private fun LogScreen(prefs: Prefs, onOpenNumber: (String) -> Unit) {
     val s = LocalStrings.current
     val context = LocalContext.current
 
@@ -701,33 +1171,25 @@ private fun LogScreen(prefs: Prefs, onBack: () -> Unit) {
     val calls = remember(version) { GuardLog.readCalls(context) }
     var allowed by remember(version) { mutableStateOf(prefs.allowedApps) }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = { Text(s.logTitle) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.Filled.ArrowBack, contentDescription = s.back)
-                    }
-                },
-                actions = {
-                    TextButton(onClick = {
-                        if (tab == 0) GuardLog.clearNotifications(context)
-                        else GuardLog.clearCalls(context)
-                        version++
-                    }) { Text(s.clear) }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
+    run {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                Modifier.fillMaxWidth().padding(end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TabRow(
+                    tab,
+                    modifier = Modifier.weight(1f),
                     containerColor = MaterialTheme.colorScheme.background
-                )
-            )
-        }
-    ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize()) {
-            TabRow(tab, containerColor = MaterialTheme.colorScheme.background) {
-                Tab(tab == 0, { tab = 0 }, text = { Text(s.tabNotifications) })
-                Tab(tab == 1, { tab = 1 }, text = { Text(s.tabCalls) })
+                ) {
+                    Tab(tab == 0, { tab = 0 }, text = { Text(s.tabNotifications) })
+                    Tab(tab == 1, { tab = 1 }, text = { Text(s.tabCalls) })
+                }
+                TextButton(onClick = {
+                    if (tab == 0) GuardLog.clearNotifications(context)
+                    else GuardLog.clearCalls(context)
+                    version++
+                }) { Text(s.clear) }
             }
             AnimatedContent(
                 targetState = tab,
@@ -776,16 +1238,36 @@ private fun LogScreen(prefs: Prefs, onBack: () -> Unit) {
                             item { EmptyNote(s.emptyCalls) }
                         } else {
                             items(calls) { c ->
-                                LogCard {
-                                    Text(
-                                        c.number.ifBlank { "—" },
-                                        style = MaterialTheme.typography.titleSmall
-                                    )
-                                    Text(
-                                        "${c.timeText()} · ${s.silenced}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surface
+                                    ),
+                                    shape = RoundedCornerShape(16.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onOpenNumber(c.number) }
+                                ) {
+                                    Row(
+                                        Modifier.padding(14.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text(
+                                                c.number.ifBlank { s.kindHidden },
+                                                style = MaterialTheme.typography.titleSmall
+                                            )
+                                            Text(
+                                                "${c.timeText()} · ${s.silenced}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Icon(
+                                            Icons.Filled.Info,
+                                            contentDescription = s.numberTitle,
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
                                 }
                             }
                         }

@@ -16,7 +16,9 @@ data class Snapshot(
     val allowedApps: Set<String>,
     val blockedApps: Set<String>,
     val blockWords: List<String>,
-    val allowWords: List<String>
+    val allowWords: List<String>,
+    val remoteBlock: List<String>,
+    val remoteAllow: List<String>
 )
 
 class Prefs(context: Context) {
@@ -44,6 +46,7 @@ class Prefs(context: Context) {
     /** Дешёвое чтение для сервисов. */
     fun snapshot(): Snapshot {
         cached?.let { return it }
+        val remote = RemoteDictionary.cached(this)
         val s = Snapshot(
             filterEnabled = filterEnabled,
             strictMode = strictMode,
@@ -51,7 +54,9 @@ class Prefs(context: Context) {
             allowedApps = allowedApps,
             blockedApps = blockedApps,
             blockWords = customBlockWords.toList(),
-            allowWords = customAllowWords.toList()
+            allowWords = customAllowWords.toList(),
+            remoteBlock = remote.block,
+            remoteAllow = remote.allow
         )
         cached = s
         return s
@@ -81,6 +86,28 @@ class Prefs(context: Context) {
     var lastUpdateCheck: Long
         get() = sp.getLong(KEY_LAST_CHECK, 0L)
         set(v) = sp.edit().putLong(KEY_LAST_CHECK, v).apply()
+
+    /** Подтягивать ли словарь из репозитория. */
+    var remoteDictEnabled: Boolean
+        get() = sp.getBoolean(KEY_REMOTE_ON, true)
+        set(v) = sp.edit().putBoolean(KEY_REMOTE_ON, v).apply()
+
+    var remoteDictJson: String
+        get() = sp.getString(KEY_REMOTE_JSON, "") ?: ""
+        set(v) = sp.edit().putString(KEY_REMOTE_JSON, v).apply()
+
+    var remoteDictEtag: String
+        get() = sp.getString(KEY_REMOTE_ETAG, "") ?: ""
+        set(v) = sp.edit().putString(KEY_REMOTE_ETAG, v).apply()
+
+    var remoteDictFetched: Long
+        get() = sp.getLong(KEY_REMOTE_TIME, 0L)
+        set(v) = sp.edit().putLong(KEY_REMOTE_TIME, v).apply()
+
+    /** Инструкция скрыта пользователем. */
+    var onboardingDone: Boolean
+        get() = sp.getBoolean(KEY_ONBOARDING, false)
+        set(v) = sp.edit().putBoolean(KEY_ONBOARDING, v).apply()
 
     var themeMode: ThemeMode
         get() = runCatching {
@@ -172,5 +199,10 @@ class Prefs(context: Context) {
         private const val KEY_ALLOW_WORDS = "custom_allow_words"
         private const val KEY_SEEN = "seen_apps"
         private const val KEY_SEEDED = "seeded_v2"
+        private const val KEY_ONBOARDING = "onboarding_done"
+        private const val KEY_REMOTE_ON = "remote_dict_on"
+        private const val KEY_REMOTE_JSON = "remote_dict_json"
+        private const val KEY_REMOTE_ETAG = "remote_dict_etag"
+        private const val KEY_REMOTE_TIME = "remote_dict_time"
     }
 }

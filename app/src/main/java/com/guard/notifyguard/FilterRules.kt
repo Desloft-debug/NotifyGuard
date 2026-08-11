@@ -184,6 +184,7 @@ object FilterRules {
         match(text, SYSTEM_WORDS)?.let { return Verdict(false, "состояние устройства: «$it»") }
         match(text, s.allowWords)?.let { return Verdict(false, "ваше слово-исключение: «$it»") }
         match(text, s.blockWords)?.let { return Verdict(true, "ваше стоп-слово: «$it»") }
+        match(text, s.remoteAllow)?.let { return Verdict(false, "онлайн-исключение: «$it»") }
 
         if (pkg in s.blockedApps) return BLOCK_APP
         if (pkg in s.allowedApps) return ALLOW_APP
@@ -192,6 +193,7 @@ object FilterRules {
         match(text, DELIVERY_WORDS)?.let { return Verdict(false, "статус заказа: «$it»") }
         match(text, CODE_WORDS)?.let { return Verdict(false, "код подтверждения: «$it»") }
         match(text, MONEY_WORDS)?.let { return Verdict(false, "операция по счёту: «$it»") }
+        match(text, s.remoteBlock)?.let { return Verdict(true, "онлайн-словарь: «$it»") }
         match(text, PROMO_WORDS)?.let { return Verdict(true, "рекламное слово: «$it»") }
 
         return if (s.strictMode) BLOCK_STRICT else ALLOW_CLEAN
