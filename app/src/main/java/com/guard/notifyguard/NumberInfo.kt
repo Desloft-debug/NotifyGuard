@@ -1,9 +1,9 @@
 package com.guard.notifyguard
 
-/** Тип номера, определённый по его виду. */
+import java.net.URLEncoder
+
 enum class NumberKind { MOBILE, LANDLINE, TOLL_FREE, PREMIUM, SHORT, HIDDEN, FOREIGN, UNKNOWN }
 
-/** Уровень подозрительности. Это оценка по косвенным признакам, не приговор. */
 enum class RiskLevel { LOW, MEDIUM, HIGH, UNKNOWN }
 
 data class NumberInfo(
@@ -14,22 +14,10 @@ data class NumberInfo(
     val region: String,
     val operator: String,
     val risk: RiskLevel,
-    /** Ключи признаков — переводятся на экране. */
     val signals: List<String>
 )
 
-/**
- * Разбор номера и оценка риска без единого сетевого запроса.
- *
- * Публичных бесплатных API, которые честно отдают «вероятность мошенничества»,
- * не существует: сервисы вроде определителей номера работают по закрытым базам
- * и требуют ключ либо запрещают автоматические запросы. Поэтому здесь только то,
- * что можно посчитать на устройстве:
- *  - принадлежность номера по нумерации (регион, тип, оператор);
- *  - структурные признаки (платный префикс, странная длина);
- *  - поведение в журнале самого телефона (частота, массовый обзвон с одного диапазона).
- * За внешней проверкой пользователь переходит сам, по кнопке, в браузер.
- */
+// Разбор номера по нумерации + признаки из журнала звонков. Всё офлайн.
 object NumberLookup {
 
     private val COUNTRIES = mapOf(
@@ -48,7 +36,7 @@ object NumberLookup {
         "998" to "Узбекистан", "976" to "Монголия", "84" to "Вьетнам"
     )
 
-    /** Географические коды России. Список неполный — только крупные. */
+    // Только крупные коды
     private val RU_REGIONS = mapOf(
         "495" to "Москва", "499" to "Москва", "498" to "Московская область",
         "812" to "Санкт-Петербург", "813" to "Ленинградская область",
@@ -70,7 +58,7 @@ object NumberLookup {
         "345" to "Тюмень", "349" to "Ханты-Мансийск"
     )
 
-    /** Мобильные диапазоны. Приблизительно: номера переносятся между операторами. */
+    // Приблизительно: номера переносятся между операторами
     private val RU_OPERATORS = listOf(
         Triple(900, 902, "Tele2"), Triple(903, 906, "Билайн"),
         Triple(908, 908, "Tele2"), Triple(909, 909, "Билайн"),
@@ -95,7 +83,7 @@ object NumberLookup {
             )
         }
 
-        // Приводим к единому виду: 8XXX -> 7XXX
+        // 8XXX -> 7XXX
         val e164 = when {
             digits.length == 11 && digits.startsWith("8") -> "7" + digits.drop(1)
             else -> digits
@@ -148,7 +136,7 @@ object NumberLookup {
             signals.add("foreign")
         }
 
-        // Поведенческие признаки из журнала самого телефона
+        // Признаки из журнала
         val sameNumber = history.count { normalize(it.number) == e164 }
         if (sameNumber >= 3) signals.add("repeated")
 
@@ -186,14 +174,19 @@ object NumberLookup {
         return if (d.length == 11 && d.startsWith("8")) "7" + d.drop(1) else d
     }
 
-    /** Публичные справочники. Пользователь открывает их сам, в браузере. */
     fun lookupLinks(e164: String): List<Pair<String, String>> {
         if (e164.isBlank()) return emptyList()
+        val q = "+$e164"
         return listOf(
-            "kto-zvonil.net" to "https://www.kto-zvonil.net/number/$e164",
-            "neberitrubku.ru" to "https://neberitrubku.ru/nomer-telefona/$e164",
-            "tellows" to "https://www.tellows.de/num/$e164",
-            "Поиск" to "https://www.google.com/search?q=%22%2B$e164%22"
+            "Google" to search("https://www.google.com/search?q=", "\"$q\""),
+            "Яндекс" to search("https://yandex.ru/search/?text=", "\"$q\""),
+            "kto-zvonil" to search(
+                "https://www.google.com/search?q=", "$q site:kto-zvonil.net"
+            ),
+            "tellows" to search("https://www.google.com/search?q=", "$q site:tellows.de")
         )
     }
+
+    private fun search(base: String, query: String): String =
+        base + URLEncoder.encode(query, "UTF-8").replace("+", "%20")
 }

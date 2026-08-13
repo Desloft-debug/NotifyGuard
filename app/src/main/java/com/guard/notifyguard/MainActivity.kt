@@ -60,8 +60,6 @@ private enum class Tab(val icon: androidx.compose.ui.graphics.vector.ImageVector
     HELP(Icons.Filled.Info)
 }
 
-/* ---------------------------------- Каркас ---------------------------------- */
-
 @Composable
 fun App() {
     val context = LocalContext.current
@@ -330,8 +328,6 @@ private fun systemInDarkTheme(): Boolean {
         android.content.res.Configuration.UI_MODE_NIGHT_YES
 }
 
-/* ------------------------------- Экран защиты ------------------------------- */
-
 @Composable
 private fun ProtectScreen(
     prefs: Prefs,
@@ -356,7 +352,10 @@ private fun ProtectScreen(
     var allowed by remember(refresh) { mutableStateOf(prefs.allowedApps) }
     var region by remember(refresh) { mutableStateOf(prefs.region) }
 
-    val listenerOn = remember(refresh) { GuardNotificationListener.isEnabled(context) }
+    val listenerOn = remember(refresh) { GuardNotificationListener.isPermitted(context) }
+    val listenerStalled = remember(refresh) {
+        GuardNotificationListener.looksStalled(context, prefs)
+    }
     val screeningOn = remember(refresh) { isCallScreener(context) }
     val contactsOn = remember(refresh) { ContactsRepo.hasPermission(context) }
 
@@ -370,8 +369,6 @@ private fun ProtectScreen(
             .onSuccess { info ->
                 if (Updater.isNewer(BuildConfig.VERSION_NAME, info.version)) {
                     updateState = UpdateState.Available(info)
-                    // Баннер живёт вверху списка: если проверку запустили
-                    // из нижней секции, без прокрутки его не увидеть
                     if (manual) {
                         notify("${s.updateFound} ${info.tag}")
                         listState.animateScrollToItem(0)
@@ -441,7 +438,7 @@ private fun ProtectScreen(
 
         item {
             AnimatedVisibility(
-                visible = !listenerOn,
+                visible = !listenerOn || listenerStalled,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
@@ -454,19 +451,47 @@ private fun ProtectScreen(
                 ) {
                     Column(Modifier.padding(18.dp)) {
                         Text(
-                            s.accessNotificationsOff,
+                            if (listenerOn) s.listenerStalled else s.accessNotificationsOff,
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
-                        Spacer(Modifier.height(10.dp))
-                        Button(
-                            onClick = {
-                                context.startActivity(
-                                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                                )
-                            },
-                            shape = RoundedCornerShape(14.dp)
-                        ) { Text(s.actionOpenSettings) }
+                        if (listenerOn) {
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                s.listenerStalledHint,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (listenerOn) {
+                                Button(
+                                    onClick = {
+                                        GuardNotificationListener.rebind(context)
+                                        notify(s.listenerReconnected)
+                                    },
+                                    shape = RoundedCornerShape(14.dp)
+                                ) { Text(s.listenerReconnect) }
+                                Spacer(Modifier.width(10.dp))
+                            }
+                            FilledTonalButton(
+                                onClick = {
+                                    context.startActivity(
+                                        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                    )
+                                },
+                                shape = RoundedCornerShape(14.dp)
+                            ) { Text(s.actionOpenSettings) }
+                        }
+                        if (listenerOn) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                s.listenerToggleHint,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
                     }
                 }
             }
@@ -475,8 +500,12 @@ private fun ProtectScreen(
         item {
             Section(s.accessTitle) {
                 StatusRow(
-                    s.accessNotifications, listenerOn,
-                    if (listenerOn) s.accessNotificationsOn else s.accessNotificationsOff,
+                    s.accessNotifications, listenerOn && !listenerStalled,
+                    when {
+                        !listenerOn -> s.accessNotificationsOff
+                        listenerStalled -> s.listenerStalledHint
+                        else -> s.accessNotificationsOn
+                    },
                     s.actionOpenSettings
                 ) {
                     context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
@@ -625,8 +654,6 @@ private fun ProtectScreen(
     }
 }
 
-/* ------------------------------- Экран справки ------------------------------ */
-
 @Composable
 private fun HelpScreen(
     prefs: Prefs,
@@ -638,7 +665,7 @@ private fun HelpScreen(
     val context = LocalContext.current
 
     var hidden by remember(refresh) { mutableStateOf(prefs.onboardingDone) }
-    val listenerOn = remember(refresh) { GuardNotificationListener.isEnabled(context) }
+    val listenerOn = remember(refresh) { GuardNotificationListener.isPermitted(context) }
     val screeningOn = remember(refresh) { isCallScreener(context) }
     val contactsOn = remember(refresh) { ContactsRepo.hasPermission(context) }
     val allDone = listenerOn && screeningOn && contactsOn
@@ -892,8 +919,6 @@ private fun SetupStep(
     }
 }
 
-/* ------------------------------- Карточка номера ---------------------------- */
-
 @Composable
 private fun NumberDialog(number: String, onDismiss: () -> Unit) {
     val s = LocalStrings.current
@@ -1102,8 +1127,6 @@ private fun DownloadCard(state: UpdateState, onInstall: (File) -> Unit) {
         }
     }
 }
-
-/* -------------------------------- Экран словаря ----------------------------- */
 
 @Composable
 private fun DictScreen(prefs: Prefs) {
@@ -1382,8 +1405,6 @@ private fun WordList(
     }
 }
 
-/* -------------------------------- Экран журнала ----------------------------- */
-
 @Composable
 private fun LogScreen(prefs: Prefs, onOpenNumber: (String) -> Unit) {
     val s = LocalStrings.current
@@ -1512,8 +1533,6 @@ private fun LogCard(content: @Composable ColumnScope.() -> Unit) {
         Column(Modifier.padding(14.dp), content = content)
     }
 }
-
-/* ------------------------------- Общие элементы ----------------------------- */
 
 @Composable
 private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) {

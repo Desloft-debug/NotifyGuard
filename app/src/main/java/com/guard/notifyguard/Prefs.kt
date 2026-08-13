@@ -1,14 +1,7 @@
 package com.guard.notifyguard
 
 import android.content.Context
-import android.content.SharedPreferences
 
-/**
- * Снимок настроек, нужных фильтру. Читается на каждом уведомлении,
- * поэтому собирается один раз и переиспользуется, пока настройки
- * не изменятся. Без этого на каждое уведомление создавалось
- * шесть новых коллекций.
- */
 data class Snapshot(
     val filterEnabled: Boolean,
     val strictMode: Boolean,
@@ -20,7 +13,6 @@ data class Snapshot(
     val remoteBlock: List<String>,
     val remoteAllow: List<String>,
     val region: Region,
-    /** Рекламные слова выбранного региона — собираются один раз. */
     val promoWords: List<String>
 )
 
@@ -32,9 +24,8 @@ class Prefs(context: Context) {
     @Volatile
     private var cached: Snapshot? = null
 
-    private val invalidator = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-        cached = null
-    }
+    @Volatile
+    private var cachedAt: Long = 0L
 
     init {
         if (!sp.getBoolean(KEY_SEEDED, false)) {
@@ -43,15 +34,16 @@ class Prefs(context: Context) {
                 .putBoolean(KEY_SEEDED, true)
                 .apply()
         }
-        sp.registerOnSharedPreferenceChangeListener(invalidator)
     }
 
-    /** Дешёвое чтение для сервисов. */
+    // Кеш на CACHE_MS: не перечитываем коллекции на каждое уведомление
     fun snapshot(): Snapshot {
-        cached?.let { return it }
+        val now = System.currentTimeMillis()
+        cached?.let { if (now - cachedAt < CACHE_MS) return it }
+
         val reg = region
         val remote = RemoteDictionary.cached(this)
-        val s = Snapshot(
+        val fresh = Snapshot(
             filterEnabled = filterEnabled,
             strictMode = strictMode,
             storeLogText = storeLogText,
@@ -64,9 +56,14 @@ class Prefs(context: Context) {
             region = reg,
             promoWords = Dictionaries.promoFor(reg)
         )
-        cached = s
-        return s
+        cached = fresh
+        cachedAt = now
+        return fresh
     }
+
+    var listenerSeenAt: Long
+        get() = sp.getLong(KEY_LISTENER_SEEN, 0L)
+        set(v) = sp.edit().putLong(KEY_LISTENER_SEEN, v).apply()
 
     var filterEnabled: Boolean
         get() = sp.getBoolean(KEY_FILTER, true)
@@ -84,12 +81,6 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_STORE_TEXT, true)
         set(v) = sp.edit().putBoolean(KEY_STORE_TEXT, v).apply()
 
-    /**
-     * Проверять ли обновления на GitHub при открытии приложения.
-     * По умолчанию выключено: скачивание чего-либо из сети должно быть
-     * осознанным решением пользователя, а не поведением по умолчанию.
-     * Этого же требуют правила F-Droid и IzzyOnDroid.
-     */
     var updateCheckEnabled: Boolean
         get() = sp.getBoolean(KEY_UPDATE_CHECK, false)
         set(v) = sp.edit().putBoolean(KEY_UPDATE_CHECK, v).apply()
@@ -98,7 +89,6 @@ class Prefs(context: Context) {
         get() = sp.getLong(KEY_LAST_CHECK, 0L)
         set(v) = sp.edit().putLong(KEY_LAST_CHECK, v).apply()
 
-    /** Подтягивать ли словарь из репозитория. */
     var remoteDictEnabled: Boolean
         get() = sp.getBoolean(KEY_REMOTE_ON, true)
         set(v) = sp.edit().putBoolean(KEY_REMOTE_ON, v).apply()
@@ -115,17 +105,12 @@ class Prefs(context: Context) {
         get() = sp.getLong(KEY_REMOTE_TIME, 0L)
         set(v) = sp.edit().putLong(KEY_REMOTE_TIME, v).apply()
 
-    /**
-     * Регион словаря. Выбирается при первом запуске:
-     * русские рекламные слова англоязычному пользователю только мешают.
-     */
     var region: Region
         get() = runCatching {
             Region.valueOf(sp.getString(KEY_REGION, null) ?: defaultRegion().name)
         }.getOrDefault(defaultRegion())
         set(v) = sp.edit().putString(KEY_REGION, v.name).apply()
 
-    /** Показывать ли экран выбора региона. */
     var regionChosen: Boolean
         get() = sp.getBoolean(KEY_REGION_CHOSEN, false)
         set(v) = sp.edit().putBoolean(KEY_REGION_CHOSEN, v).apply()
@@ -134,7 +119,6 @@ class Prefs(context: Context) {
         if (java.util.Locale.getDefault().language.equals("ru", true)) Region.RU
         else Region.EN
 
-    /** Инструкция скрыта пользователем. */
     var onboardingDone: Boolean
         get() = sp.getBoolean(KEY_ONBOARDING, false)
         set(v) = sp.edit().putBoolean(KEY_ONBOARDING, v).apply()
@@ -229,6 +213,8 @@ class Prefs(context: Context) {
         private const val KEY_ALLOW_WORDS = "custom_allow_words"
         private const val KEY_SEEN = "seen_apps"
         private const val KEY_SEEDED = "seeded_v2"
+        private const val KEY_LISTENER_SEEN = "listener_seen_at"
+        private const val CACHE_MS = 5_000L
         private const val KEY_ONBOARDING = "onboarding_done"
         private const val KEY_REGION = "region"
         private const val KEY_REGION_CHOSEN = "region_chosen"

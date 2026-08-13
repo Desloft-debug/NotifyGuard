@@ -13,11 +13,7 @@ object ContactsRepo {
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CONTACTS) ==
             PackageManager.PERMISSION_GRANTED
 
-    /**
-     * Есть ли номер в контактах.
-     * Если доступа к контактам нет, считаем номер знакомым —
-     * лучше пропустить звонок, чем заглушить всех подряд.
-     */
+    // Есть ли номер в контактах.
     fun isKnown(context: Context, number: String?): Boolean {
         if (number.isNullOrBlank()) return false
         if (!hasPermission(context)) return true

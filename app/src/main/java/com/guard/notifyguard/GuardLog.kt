@@ -31,11 +31,7 @@ data class CallEntry(
     fun timeText(): String = fmt(time)
 }
 
-/**
- * Локальный журнал. Записи складываются в один фоновый поток:
- * колбэки сервиса уведомлений приходят в главный поток, и запись
- * JSON прямо в них подтормаживала бы интерфейс системы.
- */
+// Локальный журнал.
 object GuardLog {
 
     private const val FILE = "notifyguard_log"

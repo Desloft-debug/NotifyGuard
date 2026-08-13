@@ -3,10 +3,7 @@ package com.guard.notifyguard
 import android.telecom.Call
 import android.telecom.CallScreeningService
 
-/**
- * Звонок с номера вне контактов проходит беззвучно.
- * Звонок не сбрасывается и остаётся в журнале вызовов.
- */
+// Звонок с номера вне контактов проходит беззвучно.
 class GuardCallScreeningService : CallScreeningService() {
 
     override fun onScreenCall(callDetails: Call.Details) {

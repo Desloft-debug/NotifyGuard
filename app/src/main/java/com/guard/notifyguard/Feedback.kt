@@ -8,16 +8,7 @@ import android.net.Uri
 import android.os.Build
 import java.net.URLEncoder
 
-/**
- * Обратная связь через GitHub Issues.
- *
- * Обращение не отправляется напрямую из приложения намеренно: для записи
- * в репозиторий нужен токен, а любой токен, зашитый в APK, извлекается
- * из него за пару минут — и вместе с ним чужой доступ на запись.
- * Поэтому приложение открывает форму создания issue с уже заполненными
- * полями, а отправляет её сам пользователь под своей учётной записью.
- * Так же видно, что именно уходит.
- */
+// Обратная связь через GitHub Issues.
 object Feedback {
 
     private const val MAX_BODY = 5000
@@ -30,7 +21,6 @@ object Feedback {
         return "$base?title=$t&body=$b"
     }
 
-    /** Технические данные — прикладываются только по желанию пользователя. */
     fun diagnostics(): String = buildString {
         appendLine("---")
         appendLine("Версия: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")

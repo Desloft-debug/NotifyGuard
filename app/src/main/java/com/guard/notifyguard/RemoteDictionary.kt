@@ -17,17 +17,7 @@ data class RemoteDict(
     val isEmpty: Boolean get() = block.isEmpty() && allow.isEmpty()
 }
 
-/**
- * Словарь, который лежит в репозитории и обновляется без выпуска новой версии.
- *
- * Ограничения намеренные:
- *  - удалённые слова НЕ могут перекрыть экстренные оповещения, состояние
- *    устройства, коды подтверждения и операции по счёту — эти списки
- *    зашиты в приложение и проверяются раньше;
- *  - слово короче трёх символов игнорируется, иначе одна опечатка
- *    в файле скрыла бы половину уведомлений у всех сразу;
- *  - объём ограничен, слишком большой файл отбрасывается целиком.
- */
+// Словарь, который лежит в репозитории и обновляется без выпуска новой версии.
 object RemoteDictionary {
 
     private const val URL_TEMPLATE =
@@ -41,7 +31,6 @@ object RemoteDictionary {
     private fun url(): String =
         String.format(URL_TEMPLATE, BuildConfig.GITHUB_OWNER, BuildConfig.GITHUB_REPO)
 
-    /** Слова, которые удалённый словарь не имеет права блокировать. */
     private val PROTECTED_WORDS: Set<String> by lazy {
         (FilterRules.EMERGENCY_WORDS +
             FilterRules.SYSTEM_WORDS +
@@ -69,7 +58,6 @@ object RemoteDictionary {
                 readTimeout = 10_000
                 setRequestProperty("User-Agent", "NotifyGuard")
                 setRequestProperty("Accept", "application/json")
-                // Экономит трафик: сервер ответит 304, если файл не менялся
                 prefs.remoteDictEtag.takeIf { it.isNotBlank() }?.let {
                     setRequestProperty("If-None-Match", it)
                 }
@@ -100,10 +88,7 @@ object RemoteDictionary {
         }
     }
 
-    /**
-     * Файл может содержать общие списки block/allow и разделы по регионам.
-     * Берём общие плюс раздел выбранного региона; при ALL — оба раздела.
-     */
+    // Файл может содержать общие списки block/allow и разделы по регионам.
     private fun parse(json: JSONObject, region: Region): RemoteDict {
         val sections = when (region) {
             Region.RU -> listOf("ru")

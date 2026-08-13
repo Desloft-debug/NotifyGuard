@@ -33,9 +33,6 @@ object FilterRules {
         Notification.CATEGORY_SYSTEM, Notification.CATEGORY_ERROR,
         Notification.CATEGORY_STATUS
     )
-
-    // Списки живут в Dictionaries. Здесь — только псевдонимы,
-    // чтобы экран словаря и RemoteDictionary обращались в одно место.
     val EMERGENCY_WORDS get() = Dictionaries.EMERGENCY
     val SYSTEM_WORDS get() = Dictionaries.SYSTEM
     val DELIVERY_WORDS get() = Dictionaries.DELIVERY

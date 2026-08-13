@@ -20,15 +20,7 @@ data class ReleaseInfo(
     val sizeBytes: Long
 )
 
-/**
- * Проверка обновлений через публичный API GitHub.
- *
- * Приложение обращается только к api.github.com и к адресу файла,
- * который вернул этот же API. Никакой статистики, идентификаторов
- * устройства или содержимого уведомлений наружу не уходит.
- * Фоновых задач нет: проверка идёт при открытии приложения
- * и не чаще раза в сутки.
- */
+// Проверка обновлений через публичный API GitHub.
 object Updater {
 
     private const val API =
@@ -74,7 +66,6 @@ object Updater {
         }
     }
 
-    /** Сравнение версий вида 1.4 / 1.10.2. Возвращает true, если remote новее. */
     fun isNewer(current: String, remote: String): Boolean {
         val a = current.removePrefix("v").split('.').mapNotNull { it.toIntOrNull() }
         val b = remote.removePrefix("v").split('.').mapNotNull { it.toIntOrNull() }
