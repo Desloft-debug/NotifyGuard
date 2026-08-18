@@ -1,5 +1,0 @@
-* Fixed: after an app update the filter stopped receiving notifications. The permission stayed granted, but the system unbound the service while the app still reported everything as working
-* The app now tells a granted permission apart from a live connection and warns when the link is lost
-* Reconnect button, no trip to system settings needed
-* The service asks to be rebound when the system unbinds it
-* The log now marks notifications that were recognised but could not be dismissed
