@@ -353,9 +353,6 @@ private fun ProtectScreen(
     var region by remember(refresh) { mutableStateOf(prefs.region) }
 
     val listenerOn = remember(refresh) { GuardNotificationListener.isPermitted(context) }
-    val listenerStalled = remember(refresh) {
-        GuardNotificationListener.looksStalled(context, prefs)
-    }
     val screeningOn = remember(refresh) { isCallScreener(context) }
     val contactsOn = remember(refresh) { ContactsRepo.hasPermission(context) }
 
@@ -385,6 +382,7 @@ private fun ProtectScreen(
     }
 
     LaunchedEffect(Unit) {
+        GuardNotificationListener.ensureBound(context)
         if (RemoteDictionary.shouldSync(prefs)) RemoteDictionary.sync(prefs)
         if (Updater.shouldCheck(prefs)) check(manual = false)
     }
@@ -438,7 +436,7 @@ private fun ProtectScreen(
 
         item {
             AnimatedVisibility(
-                visible = !listenerOn || listenerStalled,
+                visible = !listenerOn,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
@@ -451,47 +449,19 @@ private fun ProtectScreen(
                 ) {
                     Column(Modifier.padding(18.dp)) {
                         Text(
-                            if (listenerOn) s.listenerStalled else s.accessNotificationsOff,
+                            s.accessNotificationsOff,
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
-                        if (listenerOn) {
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                s.listenerStalledHint,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
                         Spacer(Modifier.height(12.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (listenerOn) {
-                                Button(
-                                    onClick = {
-                                        GuardNotificationListener.rebind(context)
-                                        notify(s.listenerReconnected)
-                                    },
-                                    shape = RoundedCornerShape(14.dp)
-                                ) { Text(s.listenerReconnect) }
-                                Spacer(Modifier.width(10.dp))
-                            }
-                            FilledTonalButton(
-                                onClick = {
-                                    context.startActivity(
-                                        Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                                    )
-                                },
-                                shape = RoundedCornerShape(14.dp)
-                            ) { Text(s.actionOpenSettings) }
-                        }
-                        if (listenerOn) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                s.listenerToggleHint,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
-                        }
+                        Button(
+                            onClick = {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                                )
+                            },
+                            shape = RoundedCornerShape(14.dp)
+                        ) { Text(s.actionOpenSettings) }
                     }
                 }
             }
@@ -500,12 +470,8 @@ private fun ProtectScreen(
         item {
             Section(s.accessTitle) {
                 StatusRow(
-                    s.accessNotifications, listenerOn && !listenerStalled,
-                    when {
-                        !listenerOn -> s.accessNotificationsOff
-                        listenerStalled -> s.listenerStalledHint
-                        else -> s.accessNotificationsOn
-                    },
+                    s.accessNotifications, listenerOn,
+                    if (listenerOn) s.accessNotificationsOn else s.accessNotificationsOff,
                     s.actionOpenSettings
                 ) {
                     context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))

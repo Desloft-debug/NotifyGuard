@@ -61,10 +61,6 @@ class Prefs(context: Context) {
         return fresh
     }
 
-    var listenerSeenAt: Long
-        get() = sp.getLong(KEY_LISTENER_SEEN, 0L)
-        set(v) = sp.edit().putLong(KEY_LISTENER_SEEN, v).apply()
-
     var filterEnabled: Boolean
         get() = sp.getBoolean(KEY_FILTER, true)
         set(v) = sp.edit().putBoolean(KEY_FILTER, v).apply()
@@ -213,7 +209,6 @@ class Prefs(context: Context) {
         private const val KEY_ALLOW_WORDS = "custom_allow_words"
         private const val KEY_SEEN = "seen_apps"
         private const val KEY_SEEDED = "seeded_v2"
-        private const val KEY_LISTENER_SEEN = "listener_seen_at"
         private const val CACHE_MS = 5_000L
         private const val KEY_ONBOARDING = "onboarding_done"
         private const val KEY_REGION = "region"

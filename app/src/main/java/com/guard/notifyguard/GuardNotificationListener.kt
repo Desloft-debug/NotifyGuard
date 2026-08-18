@@ -20,16 +20,19 @@ class GuardNotificationListener : NotificationListenerService() {
     }
 
     override fun onListenerConnected() {
-        connected = true
-        prefs.listenerSeenAt = System.currentTimeMillis()
+        alive = true
         runCatching { activeNotifications?.forEach { handle(it) } }
     }
 
     override fun onListenerDisconnected() {
-        connected = false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            runCatching { requestRebind(component(this)) }
-        }
+        alive = false
+        // после обновления apk система отвязывает сервис молча
+        rebind(this)
+    }
+
+    override fun onDestroy() {
+        alive = false
+        super.onDestroy()
     }
 
     override fun onNotificationPosted(sbn: StatusBarNotification) = handle(sbn)
@@ -39,7 +42,6 @@ class GuardNotificationListener : NotificationListenerService() {
         if (pkg == packageName) return
 
         if (known.add(pkg)) prefs.rememberApp(pkg)
-        prefs.listenerSeenAt = System.currentTimeMillis()
 
         val snapshot = prefs.snapshot()
         if (!snapshot.filterEnabled) return
@@ -47,7 +49,7 @@ class GuardNotificationListener : NotificationListenerService() {
         val verdict = try {
             FilterRules.decide(sbn, snapshot)
         } catch (e: Exception) {
-            Log.w(TAG, "Правила не отработали, уведомление оставлено", e)
+            Log.w(TAG, "Правила не отработали", e)
             return
         }
         if (!verdict.block) return
@@ -70,10 +72,8 @@ class GuardNotificationListener : NotificationListenerService() {
     companion object {
         private const val TAG = "NotifyGuard"
 
-        // Живо ли соединение с системой.
         @Volatile
-        var connected: Boolean = false
-            private set
+        private var alive = false
 
         fun component(context: Context): ComponentName =
             ComponentName(context, GuardNotificationListener::class.java)
@@ -86,18 +86,16 @@ class GuardNotificationListener : NotificationListenerService() {
             return flat.split(':').any { ComponentName.unflattenFromString(it) == me }
         }
 
-        // Разрешение выдано, но соединения нет и событий давно не было — почти наверняка сервис отвязан…
-        fun looksStalled(context: Context, prefs: Prefs): Boolean {
-            if (!isPermitted(context)) return false
-            if (connected) return false
-            val seen = prefs.listenerSeenAt
-            return seen == 0L || System.currentTimeMillis() - seen > 10 * 60 * 1000
-        }
-
         fun rebind(context: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 runCatching { requestRebind(component(context)) }
             }
+        }
+
+        // Вызывается при открытии приложения: если разрешение есть,
+        // а сервис не привязан, просим систему привязать его молча.
+        fun ensureBound(context: Context) {
+            if (!alive && isPermitted(context)) rebind(context)
         }
 
         fun isEnabled(context: Context): Boolean = isPermitted(context)

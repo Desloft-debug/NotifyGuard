@@ -204,13 +204,7 @@ data class Strings(
     val regionAllHint: String,
     val regionNote: String,
     val continueBtn: String,
-    val groupPromoRegion: String,
-
-    val listenerStalled: String,
-    val listenerStalledHint: String,
-    val listenerReconnect: String,
-    val listenerReconnected: String,
-    val listenerToggleHint: String
+    val groupPromoRegion: String
 )
 
 val RU = Strings(
@@ -413,13 +407,7 @@ val RU = Strings(
     regionAllHint = "Полный словарь, если рассылки приходят на двух языках",
     regionNote = "Коды подтверждения, банковские операции, статусы доставки и экстренные оповещения распознаются на всех языках независимо от выбора. Поменять можно в любой момент.",
     continueBtn = "Продолжить",
-    groupPromoRegion = "Реклама (ваш регион)",
-
-    listenerStalled = "Фильтр не получает уведомления",
-    listenerStalledHint = "Разрешение выдано, но система отвязала службу — так бывает после обновления приложения.",
-    listenerReconnect = "Переподключить",
-    listenerReconnected = "Запрос отправлен. Если через минуту ничего не изменится, выключите и включите доступ в системных настройках.",
-    listenerToggleHint = "Не помогло? Откройте настройки доступа к уведомлениям, выключите «Тихие уведомления» и включите снова."
+    groupPromoRegion = "Реклама (ваш регион)"
 )
 
 val EN = Strings(
@@ -622,13 +610,7 @@ val EN = Strings(
     regionAllHint = "The full dictionary, if you get marketing in both languages",
     regionNote = "Verification codes, bank activity, delivery updates and emergency alerts are recognised in every language regardless of this choice. You can change it any time.",
     continueBtn = "Continue",
-    groupPromoRegion = "Advertising (your region)",
-
-    listenerStalled = "The filter is not receiving notifications",
-    listenerStalledHint = "Permission is granted, but the system unbound the service — this happens after an app update.",
-    listenerReconnect = "Reconnect",
-    listenerReconnected = "Request sent. If nothing changes within a minute, toggle the access off and on in system settings.",
-    listenerToggleHint = "Still nothing? Open notification access settings, turn Quiet Notifications off and on again."
+    groupPromoRegion = "Advertising (your region)"
 )
 
 val LocalStrings = staticCompositionLocalOf { RU }
