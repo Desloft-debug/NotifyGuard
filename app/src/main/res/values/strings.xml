@@ -2,4 +2,6 @@
 <resources>
     <string name="app_name">Quiet Notifications</string>
     <string name="listener_label">Notification filter</string>
+    <string name="keepalive_channel">Background service</string>
+    <string name="keepalive_text">Filter is running</string>
 </resources>

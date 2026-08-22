@@ -353,6 +353,9 @@ private fun ProtectScreen(
     var region by remember(refresh) { mutableStateOf(prefs.region) }
 
     val listenerOn = remember(refresh) { GuardNotificationListener.isPermitted(context) }
+    val batteryFree = remember(refresh) { KeepAlive.isBatteryUnrestricted(context) }
+    val hasVendor = remember { KeepAlive.hasVendorScreen(context) }
+    var keepAlive by remember(refresh) { mutableStateOf(prefs.keepAlive) }
     val screeningOn = remember(refresh) { isCallScreener(context) }
     val contactsOn = remember(refresh) { ContactsRepo.hasPermission(context) }
 
@@ -383,6 +386,8 @@ private fun ProtectScreen(
 
     LaunchedEffect(Unit) {
         GuardNotificationListener.ensureBound(context)
+        KeepAlive.schedule(context)
+        GuardForegroundService.start(context)
         if (RemoteDictionary.shouldSync(prefs)) RemoteDictionary.sync(prefs)
         if (Updater.shouldCheck(prefs)) check(manual = false)
     }
@@ -486,6 +491,60 @@ private fun ProtectScreen(
                     if (contactsOn) s.accessContactsOn else s.accessContactsOff,
                     s.actionGrant
                 ) { contactsLauncher.launch(Manifest.permission.READ_CONTACTS) }
+            }
+        }
+
+        item {
+            Section(s.backgroundTitle) {
+                Text(
+                    s.backgroundHint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(6.dp))
+                StatusRow(
+                    s.batteryUnrestricted, batteryFree,
+                    if (batteryFree) s.batteryUnrestrictedOn else s.batteryUnrestrictedOff,
+                    s.batteryAction
+                ) { KeepAlive.requestBatteryExemption(context) }
+
+                if (hasVendor) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text(s.autostart, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                s.autostartHint,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        FilledTonalButton(onClick = { KeepAlive.openVendorScreen(context) }) {
+                            Text(s.autostartAction)
+                        }
+                    }
+                }
+
+                SwitchRow(s.keepAlive, s.keepAliveHint, keepAlive) {
+                    keepAlive = it
+                    prefs.keepAlive = it
+                    if (it) GuardForegroundService.start(context)
+                    else GuardForegroundService.stop(context)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    s.recentsHint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    s.backgroundNote,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 

@@ -21,6 +21,7 @@ class GuardNotificationListener : NotificationListenerService() {
 
     override fun onListenerConnected() {
         alive = true
+        GuardForegroundService.start(this)
         runCatching { activeNotifications?.forEach { handle(it) } }
     }
 

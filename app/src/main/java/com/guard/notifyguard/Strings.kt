@@ -204,7 +204,21 @@ data class Strings(
     val regionAllHint: String,
     val regionNote: String,
     val continueBtn: String,
-    val groupPromoRegion: String
+    val groupPromoRegion: String,
+
+    val backgroundTitle: String,
+    val backgroundHint: String,
+    val batteryUnrestricted: String,
+    val batteryUnrestrictedOn: String,
+    val batteryUnrestrictedOff: String,
+    val batteryAction: String,
+    val autostart: String,
+    val autostartHint: String,
+    val autostartAction: String,
+    val keepAlive: String,
+    val keepAliveHint: String,
+    val backgroundNote: String,
+    val recentsHint: String
 )
 
 val RU = Strings(
@@ -407,7 +421,21 @@ val RU = Strings(
     regionAllHint = "Полный словарь, если рассылки приходят на двух языках",
     regionNote = "Коды подтверждения, банковские операции, статусы доставки и экстренные оповещения распознаются на всех языках независимо от выбора. Поменять можно в любой момент.",
     continueBtn = "Продолжить",
-    groupPromoRegion = "Реклама (ваш регион)"
+    groupPromoRegion = "Реклама (ваш регион)",
+
+    backgroundTitle = "Работа в фоне",
+    backgroundHint = "Если через несколько часов фильтр перестаёт срабатывать, значит система выгрузила приложение из памяти. Пункты ниже это предотвращают.",
+    batteryUnrestricted = "Без ограничений батареи",
+    batteryUnrestrictedOn = "Система не будет выгружать приложение",
+    batteryUnrestrictedOff = "Главная причина, по которой фильтр замолкает",
+    batteryAction = "Разрешить",
+    autostart = "Автозапуск",
+    autostartHint = "На Xiaomi, Huawei, OPPO, vivo и Samsung нужно отдельно разрешить автозапуск — системного способа проверить это нет, откройте и убедитесь сами",
+    autostartAction = "Открыть",
+    keepAlive = "Постоянное уведомление",
+    keepAliveHint = "Крайняя мера: в шторке появится незаметная строка, зато систему это удержит от выгрузки. Расход батареи почти нулевой — служба ничего не делает",
+    backgroundNote = "Раз в пятнадцать минут приложение проверяет связь со службой уведомлений. Проверка выполняется вместе с другими задачами системы и отдельно устройство не будит.",
+    recentsHint = "Очистка недавних приложений выгружает фильтр — он вернётся сам через несколько секунд. Чтобы этого не происходило вовсе, откройте список недавних, задержите палец на карточке приложения и выберите замок."
 )
 
 val EN = Strings(
@@ -610,7 +638,21 @@ val EN = Strings(
     regionAllHint = "The full dictionary, if you get marketing in both languages",
     regionNote = "Verification codes, bank activity, delivery updates and emergency alerts are recognised in every language regardless of this choice. You can change it any time.",
     continueBtn = "Continue",
-    groupPromoRegion = "Advertising (your region)"
+    groupPromoRegion = "Advertising (your region)",
+
+    backgroundTitle = "Background operation",
+    backgroundHint = "If the filter goes quiet after a few hours, the system has evicted the app from memory. The options below prevent that.",
+    batteryUnrestricted = "Unrestricted battery use",
+    batteryUnrestrictedOn = "The system will not evict the app",
+    batteryUnrestrictedOff = "The main reason the filter goes silent",
+    batteryAction = "Allow",
+    autostart = "Autostart",
+    autostartHint = "Xiaomi, Huawei, OPPO, vivo and Samsung require autostart to be allowed separately — there is no way to check it programmatically, so open it and verify",
+    autostartAction = "Open",
+    keepAlive = "Persistent notification",
+    keepAliveHint = "Last resort: an unobtrusive line appears in the shade, but the system keeps the app alive. Battery cost is near zero — the service does nothing",
+    backgroundNote = "Every fifteen minutes the app verifies the listener binding. The check runs alongside other system tasks and never wakes the device on its own.",
+    recentsHint = "Clearing recent apps unloads the filter — it comes back on its own within seconds. To avoid it entirely, open recents, long-press the app card and choose the lock icon."
 )
 
 val LocalStrings = staticCompositionLocalOf { RU }

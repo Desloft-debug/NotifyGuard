@@ -2,4 +2,6 @@
 <resources>
     <string name="app_name">Тихие уведомления</string>
     <string name="listener_label">Фильтр уведомлений</string>
+    <string name="keepalive_channel">Фоновая служба</string>
+    <string name="keepalive_text">Фильтр работает</string>
 </resources>

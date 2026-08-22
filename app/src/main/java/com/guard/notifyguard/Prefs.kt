@@ -69,6 +69,11 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_STRICT, false)
         set(v) = sp.edit().putBoolean(KEY_STRICT, v).apply()
 
+    // Постоянный сервис: без него процесс выгружается при очистке памяти
+    var keepAlive: Boolean
+        get() = sp.getBoolean(KEY_KEEP_ALIVE, true)
+        set(v) = sp.edit().putBoolean(KEY_KEEP_ALIVE, v).apply()
+
     var silenceUnknownCalls: Boolean
         get() = sp.getBoolean(KEY_SILENCE_CALLS, false)
         set(v) = sp.edit().putBoolean(KEY_SILENCE_CALLS, v).apply()
@@ -198,6 +203,7 @@ class Prefs(context: Context) {
         private const val KEY_FILTER = "filter_enabled"
         private const val KEY_STRICT = "strict_mode"
         private const val KEY_SILENCE_CALLS = "silence_unknown_calls"
+        private const val KEY_KEEP_ALIVE = "keep_alive"
         private const val KEY_STORE_TEXT = "store_log_text"
         private const val KEY_UPDATE_CHECK = "update_check"
         private const val KEY_LAST_CHECK = "last_update_check"
