@@ -1,4 +1,0 @@
-* Fixed: the app reported that the filter was not receiving notifications and asked to reconnect access for no reason
-* The service now asks the system to rebind it silently when the binding is lost
-* The warning appears only when the permission is genuinely missing
-* Number lookup links replaced with search queries: the previous URLs pointed to pages that do not exist
