@@ -12,8 +12,8 @@ android {
         applicationId = "com.guard.notifyguard"
         minSdk = 29
         targetSdk = 34
-        versionCode = 13
-        versionName = "2.6"
+        versionCode = 14
+        versionName = "3.0"
 
         // Репозиторий, откуда берутся обновления.
         // Если сменится имя аккаунта — поправить здесь.

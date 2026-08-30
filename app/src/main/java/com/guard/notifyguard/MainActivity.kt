@@ -350,6 +350,7 @@ private fun ProtectScreen(
     var storeText by remember(refresh) { mutableStateOf(prefs.storeLogText) }
     var autoUpdate by remember(refresh) { mutableStateOf(prefs.updateCheckEnabled) }
     var allowed by remember(refresh) { mutableStateOf(prefs.allowedApps) }
+    val blockedCount = remember(refresh) { prefs.blockedApps.size }
     var region by remember(refresh) { mutableStateOf(prefs.region) }
 
     val listenerOn = remember(refresh) { GuardNotificationListener.isPermitted(context) }
@@ -398,6 +399,24 @@ private fun ProtectScreen(
     val roleLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { onRefresh() }
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            Backup.write(context, uri, prefs)
+                .onSuccess { notify(s.backupSaved) }
+                .onFailure { notify(s.backupFailed) }
+        }
+    }
+    val loadLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            Backup.read(context, uri, prefs)
+                .onSuccess { notify(s.backupLoaded); onRefresh() }
+                .onFailure { notify(s.backupFailed) }
+        }
+    }
 
     LazyColumn(
         state = listState,
@@ -561,7 +580,8 @@ private fun ProtectScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        "${s.whitelistCount}: ${allowed.size}",
+                        "${s.whitelistCount}: ${allowed.size}   ·   " +
+                            "${s.blockedAppsCount}: ${blockedCount}",
                         Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -651,6 +671,31 @@ private fun ProtectScreen(
                         )
                     }
                 }
+            }
+        }
+
+        item {
+            Section(s.backupTitle) {
+                Text(
+                    s.backupHint,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    FilledTonalButton(onClick = { saveLauncher.launch(Backup.fileName()) }) {
+                        Text(s.backupSave)
+                    }
+                    FilledTonalButton(onClick = { loadLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }) {
+                        Text(s.backupLoad)
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    s.backupNote,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 
@@ -1440,107 +1485,197 @@ private fun LogScreen(prefs: Prefs, onOpenNumber: (String) -> Unit) {
     val notifications = remember(version) { GuardLog.readNotifications(context) }
     val calls = remember(version) { GuardLog.readCalls(context) }
     var allowed by remember(version) { mutableStateOf(prefs.allowedApps) }
+    var blocked by remember(version) { mutableStateOf(prefs.blockedApps) }
+    var expanded by remember { mutableStateOf<String?>(null) }
 
-    run {
-        Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().padding(end = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
+    val groups = remember(notifications) {
+        notifications.groupBy { it.pkg }
+            .map { (pkg, items) -> pkg to items }
+            .sortedByDescending { it.second.size }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            Modifier.fillMaxWidth().padding(end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            TabRow(
+                tab,
+                modifier = Modifier.weight(1f),
+                containerColor = MaterialTheme.colorScheme.background
             ) {
-                TabRow(
-                    tab,
-                    modifier = Modifier.weight(1f),
-                    containerColor = MaterialTheme.colorScheme.background
-                ) {
-                    Tab(tab == 0, { tab = 0 }, text = { Text(s.tabNotifications) })
-                    Tab(tab == 1, { tab = 1 }, text = { Text(s.tabCalls) })
-                }
-                TextButton(onClick = {
-                    if (tab == 0) GuardLog.clearNotifications(context)
-                    else GuardLog.clearCalls(context)
-                    version++
-                }) { Text(s.clear) }
+                Tab(tab == 0, { tab = 0 }, text = { Text(s.tabNotifications) })
+                Tab(tab == 1, { tab = 1 }, text = { Text(s.tabCalls) })
             }
-            AnimatedContent(
-                targetState = tab,
-                transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
-                label = "log"
-            ) { current ->
-                LazyColumn(
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    if (current == 0) {
-                        if (notifications.isEmpty()) {
-                            item { EmptyNote(s.emptyNotifications) }
-                        } else {
-                            items(notifications) { e ->
-                                LogCard {
-                                    Text(
-                                        appLabel(context, e.pkg),
-                                        style = MaterialTheme.typography.titleSmall
-                                    )
-                                    Spacer(Modifier.height(2.dp))
-                                    Text(
-                                        e.title.ifBlank { s.hiddenText },
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                    Spacer(Modifier.height(6.dp))
-                                    Text(
-                                        "${e.timeText()} · ${e.reason}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                    if (e.pkg !in allowed) {
-                                        TextButton(
-                                            onClick = {
-                                                prefs.toggleAllowed(e.pkg)
-                                                allowed = prefs.allowedApps
-                                            },
-                                            contentPadding = PaddingValues(0.dp)
-                                        ) { Text(s.unwhitelist) }
-                                    }
-                                }
-                            }
-                        }
+            TextButton(onClick = {
+                if (tab == 0) GuardLog.clearNotifications(context)
+                else GuardLog.clearCalls(context)
+                version++
+            }) { Text(s.clear) }
+        }
+
+        AnimatedContent(
+            targetState = tab,
+            transitionSpec = { fadeIn(tween(180)) togetherWith fadeOut(tween(120)) },
+            label = "log"
+        ) { current ->
+            LazyColumn(
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (current == 0) {
+                    if (groups.isEmpty()) {
+                        item { EmptyNote(s.emptyNotifications) }
                     } else {
-                        if (calls.isEmpty()) {
-                            item { EmptyNote(s.emptyCalls) }
-                        } else {
-                            items(calls) { c ->
-                                Card(
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surface
-                                    ),
-                                    shape = RoundedCornerShape(16.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onOpenNumber(c.number) }
+                        items(groups, key = { it.first }) { (pkg, items) ->
+                            AppGroupCard(
+                                pkg = pkg,
+                                items = items,
+                                open = expanded == pkg,
+                                allowed = pkg in allowed,
+                                blocked = pkg in blocked,
+                                onToggleOpen = { expanded = if (expanded == pkg) null else pkg },
+                                onAllow = {
+                                    prefs.toggleAllowed(pkg)
+                                    allowed = prefs.allowedApps
+                                    blocked = prefs.blockedApps
+                                },
+                                onBlock = {
+                                    prefs.toggleBlocked(pkg)
+                                    blocked = prefs.blockedApps
+                                    allowed = prefs.allowedApps
+                                },
+                                onSettings = { openAppNotificationSettings(context, pkg) }
+                            )
+                        }
+                    }
+                } else {
+                    if (calls.isEmpty()) {
+                        item { EmptyNote(s.emptyCalls) }
+                    } else {
+                        items(calls) { c ->
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                ),
+                                shape = RoundedCornerShape(16.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onOpenNumber(c.number) }
+                            ) {
+                                Row(
+                                    Modifier.padding(14.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Row(
-                                        Modifier.padding(14.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(Modifier.weight(1f)) {
-                                            Text(
-                                                c.number.ifBlank { s.kindHidden },
-                                                style = MaterialTheme.typography.titleSmall
-                                            )
-                                            Text(
-                                                "${c.timeText()} · ${s.silenced}",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
-                                        Icon(
-                                            Icons.Filled.Info,
-                                            contentDescription = s.numberTitle,
-                                            tint = MaterialTheme.colorScheme.primary
+                                    Column(Modifier.weight(1f)) {
+                                        Text(
+                                            c.number.ifBlank { s.kindHidden },
+                                            style = MaterialTheme.typography.titleSmall
+                                        )
+                                        Text(
+                                            "${c.timeText()} · ${s.silenced}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
                                     }
+                                    Icon(
+                                        Icons.Filled.Info,
+                                        contentDescription = s.numberTitle,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppGroupCard(
+    pkg: String,
+    items: List<LogEntry>,
+    open: Boolean,
+    allowed: Boolean,
+    blocked: Boolean,
+    onToggleOpen: () -> Unit,
+    onAllow: () -> Unit,
+    onBlock: () -> Unit,
+    onSettings: () -> Unit
+) {
+    val s = LocalStrings.current
+    val context = LocalContext.current
+    val label = remember(pkg) { appLabel(context, pkg) }
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (blocked) MaterialTheme.colorScheme.errorContainer
+            else MaterialTheme.colorScheme.surface
+        ),
+        shape = RoundedCornerShape(18.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize(spring(stiffness = Spring.StiffnessMediumLow))
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Row(
+                Modifier.fillMaxWidth().clickable { onToggleOpen() },
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(label, style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "${items.size} ${s.logGroupCount} · ${items.first().timeText()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (blocked) {
+                    Text(
+                        s.blockAppDone,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+
+            if (open) {
+                Spacer(Modifier.height(12.dp))
+                items.take(20).forEach { e ->
+                    Column(Modifier.padding(bottom = 8.dp)) {
+                        Text(
+                            e.title.ifBlank { s.hiddenText },
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            "${e.timeText()} · ${e.reason}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilledTonalButton(onClick = onBlock) {
+                        Text(if (blocked) s.unblockApp else s.blockApp)
+                    }
+                    TextButton(onClick = onSettings) { Text(s.appSettings) }
+                }
+                if (!blocked) {
+                    Text(
+                        s.blockAppWarn,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (!blocked && !allowed) {
+                    TextButton(onClick = onAllow, contentPadding = PaddingValues(0.dp)) {
+                        Text(s.unwhitelist)
                     }
                 }
             }
@@ -1823,6 +1958,18 @@ private fun OnResume(action: () -> Unit) {
         owner.lifecycle.addObserver(obs)
         onDispose { owner.lifecycle.removeObserver(obs) }
     }
+}
+
+private fun openAppNotificationSettings(context: Context, pkg: String) {
+    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+        .putExtra(Settings.EXTRA_APP_PACKAGE, pkg)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    val fallback = Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.parse("package:$pkg")
+    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    runCatching { context.startActivity(intent) }
+        .onFailure { runCatching { context.startActivity(fallback) } }
 }
 
 private fun appLabel(context: Context, pkg: String): String = runCatching {

@@ -1,0 +1,13 @@
+Log
+* Entries grouped by app: a card shows the number of hidden notifications and expands on tap
+* "Hide all notifications" button puts an app on the blocklist entirely
+* Shortcut to the system notification settings of that app
+* The blocklist size is shown on the main screen
+
+Backup
+* Saves words, app lists and settings to a file through the system picker — Google Drive included
+* Restores from a file with content validation
+* The log and notification texts are never included
+
+Other
+* The app blocklist overrides codes and bank notifications but not emergency alerts — the button says so

@@ -218,7 +218,25 @@ data class Strings(
     val keepAlive: String,
     val keepAliveHint: String,
     val backgroundNote: String,
-    val recentsHint: String
+    val recentsHint: String,
+
+    val blockApp: String,
+    val blockAppWarn: String,
+    val blockAppDone: String,
+    val unblockApp: String,
+    val appSettings: String,
+    val blockedAppsCount: String,
+    val logGroupCount: String,
+    val logExpand: String,
+
+    val backupTitle: String,
+    val backupHint: String,
+    val backupSave: String,
+    val backupLoad: String,
+    val backupSaved: String,
+    val backupLoaded: String,
+    val backupFailed: String,
+    val backupNote: String
 )
 
 val RU = Strings(
@@ -435,7 +453,25 @@ val RU = Strings(
     keepAlive = "Постоянное уведомление",
     keepAliveHint = "Крайняя мера: в шторке появится незаметная строка, зато систему это удержит от выгрузки. Расход батареи почти нулевой — служба ничего не делает",
     backgroundNote = "Раз в пятнадцать минут приложение проверяет связь со службой уведомлений. Проверка выполняется вместе с другими задачами системы и отдельно устройство не будит.",
-    recentsHint = "Очистка недавних приложений выгружает фильтр — он вернётся сам через несколько секунд. Чтобы этого не происходило вовсе, откройте список недавних, задержите палец на карточке приложения и выберите замок."
+    recentsHint = "Очистка недавних приложений выгружает фильтр — он вернётся сам через несколько секунд. Чтобы этого не происходило вовсе, откройте список недавних, задержите палец на карточке приложения и выберите замок.",
+
+    blockApp = "Скрывать все уведомления",
+    blockAppWarn = "Пропадут и коды подтверждения от этого приложения. Экстренные оповещения останутся.",
+    blockAppDone = "Приложение в чёрном списке",
+    unblockApp = "Вернуть уведомления",
+    appSettings = "Настройки приложения",
+    blockedAppsCount = "Чёрный список",
+    logGroupCount = "скрыто",
+    logExpand = "Подробнее",
+
+    backupTitle = "Резервная копия",
+    backupHint = "Сохраняет ваши слова, списки приложений и настройки в файл. При сохранении выберите Google Диск в системном окне — файл окажется в вашем облаке.",
+    backupSave = "Сохранить",
+    backupLoad = "Восстановить",
+    backupSaved = "Копия сохранена",
+    backupLoaded = "Настройки восстановлены",
+    backupFailed = "Не удалось прочитать файл",
+    backupNote = "В копию попадают только настройки. Журнал и тексты уведомлений в файл не записываются."
 )
 
 val EN = Strings(
@@ -652,7 +688,25 @@ val EN = Strings(
     keepAlive = "Persistent notification",
     keepAliveHint = "Last resort: an unobtrusive line appears in the shade, but the system keeps the app alive. Battery cost is near zero — the service does nothing",
     backgroundNote = "Every fifteen minutes the app verifies the listener binding. The check runs alongside other system tasks and never wakes the device on its own.",
-    recentsHint = "Clearing recent apps unloads the filter — it comes back on its own within seconds. To avoid it entirely, open recents, long-press the app card and choose the lock icon."
+    recentsHint = "Clearing recent apps unloads the filter — it comes back on its own within seconds. To avoid it entirely, open recents, long-press the app card and choose the lock icon.",
+
+    blockApp = "Hide all notifications",
+    blockAppWarn = "Verification codes from this app will disappear too. Emergency alerts still get through.",
+    blockAppDone = "App is blocked",
+    unblockApp = "Allow notifications again",
+    appSettings = "App settings",
+    blockedAppsCount = "Blocked apps",
+    logGroupCount = "hidden",
+    logExpand = "Details",
+
+    backupTitle = "Backup",
+    backupHint = "Saves your words, app lists and settings to a file. Pick Google Drive in the system dialog and the file lands in your cloud.",
+    backupSave = "Save",
+    backupLoad = "Restore",
+    backupSaved = "Backup saved",
+    backupLoaded = "Settings restored",
+    backupFailed = "Could not read the file",
+    backupNote = "Only settings are included. The log and notification texts are never written to the file."
 )
 
 val LocalStrings = staticCompositionLocalOf { RU }

@@ -187,6 +187,13 @@ class Prefs(context: Context) {
         return if (t.length < 2 || t.length > 40) null else t
     }
 
+    fun toggleBlocked(pkg: String) {
+        val set = blockedApps.toMutableSet()
+        if (!set.add(pkg)) set.remove(pkg)
+        blockedApps = set
+        if (pkg in allowedApps) allowedApps = allowedApps - pkg
+    }
+
     fun toggleAllowed(pkg: String) {
         val set = allowedApps.toMutableSet()
         if (!set.add(pkg)) set.remove(pkg)
