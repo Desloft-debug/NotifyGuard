@@ -1,5 +1,0 @@
-* The filter keeps working after memory cleanup and after swiping the app from recents
-* Recovers after a reboot and after an app update
-* The listener binding is verified every fifteen minutes, batched with other system work so the device is never woken for it
-* A minimum-priority persistent notification keeps the system from unloading the app; can be turned off in settings
-* Buttons to lift battery restrictions and to open autostart settings on Xiaomi, Huawei, OPPO, vivo and Samsung
