@@ -11,6 +11,34 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
+    <!--
+        Android 11+ прячет от приложения чужие пакеты, пока они не перечислены здесь.
+        Без этого блока getApplicationInfo() бросает NameNotFoundException, и в журнале
+        вместо «WhatsApp» видно «com.whatsapp», а кнопка автозапуска на Xiaomi и Huawei
+        не показывается вовсе, потому что resolveActivity() возвращает null.
+
+        Намеренно НЕ используется QUERY_ALL_PACKAGES: F-Droid и IzzyOnDroid помечают его
+        как anti-feature, а intent на launcher-активность закрывает ту же задачу —
+        видны все приложения со значком в меню, то есть ровно те, чьи уведомления
+        человек может увидеть.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+
+        <!-- Экраны автозапуска прошивок: у них нет launcher-активности,
+             поэтому нужны поимённо. Список синхронизирован с KeepAlive.VENDOR_SCREENS. -->
+        <package android:name="com.miui.securitycenter" />
+        <package android:name="com.huawei.systemmanager" />
+        <package android:name="com.coloros.safecenter" />
+        <package android:name="com.oppo.safe" />
+        <package android:name="com.vivo.permissionmanager" />
+        <package android:name="com.samsung.android.lool" />
+        <package android:name="com.letv.android.letvsafe" />
+    </queries>
+
     <application
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -19,6 +47,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="@string/app_name"
         android:supportsRtl="true"
+        android:enableOnBackInvokedCallback="true"
         android:usesCleartextTraffic="false"
         android:theme="@style/Theme.NotifyGuard">
 

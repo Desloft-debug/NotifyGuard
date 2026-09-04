@@ -1,6 +1,7 @@
 package com.guard.notifyguard
 
 import android.content.Context
+import android.content.SharedPreferences
 
 data class Snapshot(
     val filterEnabled: Boolean,
@@ -28,15 +29,48 @@ class Prefs(context: Context) {
     private var cachedAt: Long = 0L
 
     init {
-        if (!sp.getBoolean(KEY_SEEDED, false)) {
-            sp.edit()
-                .putStringSet(KEY_BLOCK_WORDS, DEFAULT_BLOCK_WORDS)
-                .putBoolean(KEY_SEEDED, true)
-                .apply()
-        }
+        migrate()
     }
 
-    // Кеш на CACHE_MS: не перечитываем коллекции на каждое уведомление
+    /**
+     * Версии до 3.1 при первом запуске молча записывали в пользовательские стоп-слова
+     * девять слов: акции, деньги, займы, кредит, обновление, подписка, процент,
+     * рекомендации, скидка.
+     *
+     * Пользовательские стоп-слова проверяются раньше словарей CODE, MONEY и DELIVERY
+     * и раньше проверки «это личное сообщение» — так и задумано, слово, вписанное
+     * человеком, должно перебивать эвристику. Но эти девять слов человек не вписывал,
+     * и из-за них терялись смс банка («Кредит одобрен, код 4821»), начисления
+     * («начислен процент по вкладу») и личные сообщения со словом «скидка».
+     *
+     * Все девять уже покрыты словарём PROMO_RU в формах, которые не задевают
+     * банковские тексты, так что сеять их незачем.
+     *
+     * Миграция удаляет набор только если он в точности совпадает со старым дефолтным,
+     * то есть пользователь его не трогал. Всё, что добавлено руками, остаётся.
+     */
+    private fun migrate() {
+        if (sp.getBoolean(KEY_MIGRATED_V3, false)) return
+        val stored = sp.getStringSet(KEY_BLOCK_WORDS, null)
+        val e = sp.edit().putBoolean(KEY_MIGRATED_V3, true).remove(KEY_SEEDED_LEGACY)
+        if (stored == LEGACY_SEED_WORDS) e.remove(KEY_BLOCK_WORDS)
+        e.apply()
+        cached = null
+    }
+
+    /**
+     * Любая запись сбрасывает снимок. Раньше этого не было, и изменение настройки
+     * вступало в силу с задержкой до CACHE_MS — заметнее всего при восстановлении
+     * резервной копии, которая пишет полтора десятка ключей подряд.
+     */
+    private fun edit(block: (SharedPreferences.Editor) -> Unit) {
+        val e = sp.edit()
+        block(e)
+        e.apply()
+        cached = null
+    }
+
+    /** Кеш на CACHE_MS: не перечитываем коллекции на каждое уведомление. */
     fun snapshot(): Snapshot {
         val now = System.currentTimeMillis()
         cached?.let { if (now - cachedAt < CACHE_MS) return it }
@@ -63,58 +97,58 @@ class Prefs(context: Context) {
 
     var filterEnabled: Boolean
         get() = sp.getBoolean(KEY_FILTER, true)
-        set(v) = sp.edit().putBoolean(KEY_FILTER, v).apply()
+        set(v) = edit { it.putBoolean(KEY_FILTER, v) }
 
     var strictMode: Boolean
         get() = sp.getBoolean(KEY_STRICT, false)
-        set(v) = sp.edit().putBoolean(KEY_STRICT, v).apply()
+        set(v) = edit { it.putBoolean(KEY_STRICT, v) }
 
     // Постоянный сервис: без него процесс выгружается при очистке памяти
     var keepAlive: Boolean
         get() = sp.getBoolean(KEY_KEEP_ALIVE, true)
-        set(v) = sp.edit().putBoolean(KEY_KEEP_ALIVE, v).apply()
+        set(v) = edit { it.putBoolean(KEY_KEEP_ALIVE, v) }
 
     var silenceUnknownCalls: Boolean
         get() = sp.getBoolean(KEY_SILENCE_CALLS, false)
-        set(v) = sp.edit().putBoolean(KEY_SILENCE_CALLS, v).apply()
+        set(v) = edit { it.putBoolean(KEY_SILENCE_CALLS, v) }
 
     var storeLogText: Boolean
         get() = sp.getBoolean(KEY_STORE_TEXT, true)
-        set(v) = sp.edit().putBoolean(KEY_STORE_TEXT, v).apply()
+        set(v) = edit { it.putBoolean(KEY_STORE_TEXT, v) }
 
     var updateCheckEnabled: Boolean
         get() = sp.getBoolean(KEY_UPDATE_CHECK, false)
-        set(v) = sp.edit().putBoolean(KEY_UPDATE_CHECK, v).apply()
+        set(v) = edit { it.putBoolean(KEY_UPDATE_CHECK, v) }
 
     var lastUpdateCheck: Long
         get() = sp.getLong(KEY_LAST_CHECK, 0L)
-        set(v) = sp.edit().putLong(KEY_LAST_CHECK, v).apply()
+        set(v) = edit { it.putLong(KEY_LAST_CHECK, v) }
 
     var remoteDictEnabled: Boolean
         get() = sp.getBoolean(KEY_REMOTE_ON, true)
-        set(v) = sp.edit().putBoolean(KEY_REMOTE_ON, v).apply()
+        set(v) = edit { it.putBoolean(KEY_REMOTE_ON, v) }
 
     var remoteDictJson: String
         get() = sp.getString(KEY_REMOTE_JSON, "") ?: ""
-        set(v) = sp.edit().putString(KEY_REMOTE_JSON, v).apply()
+        set(v) = edit { it.putString(KEY_REMOTE_JSON, v) }
 
     var remoteDictEtag: String
         get() = sp.getString(KEY_REMOTE_ETAG, "") ?: ""
-        set(v) = sp.edit().putString(KEY_REMOTE_ETAG, v).apply()
+        set(v) = edit { it.putString(KEY_REMOTE_ETAG, v) }
 
     var remoteDictFetched: Long
         get() = sp.getLong(KEY_REMOTE_TIME, 0L)
-        set(v) = sp.edit().putLong(KEY_REMOTE_TIME, v).apply()
+        set(v) = edit { it.putLong(KEY_REMOTE_TIME, v) }
 
     var region: Region
         get() = runCatching {
             Region.valueOf(sp.getString(KEY_REGION, null) ?: defaultRegion().name)
         }.getOrDefault(defaultRegion())
-        set(v) = sp.edit().putString(KEY_REGION, v.name).apply()
+        set(v) = edit { it.putString(KEY_REGION, v.name) }
 
     var regionChosen: Boolean
         get() = sp.getBoolean(KEY_REGION_CHOSEN, false)
-        set(v) = sp.edit().putBoolean(KEY_REGION_CHOSEN, v).apply()
+        set(v) = edit { it.putBoolean(KEY_REGION_CHOSEN, v) }
 
     private fun defaultRegion(): Region =
         if (java.util.Locale.getDefault().language.equals("ru", true)) Region.RU
@@ -122,39 +156,39 @@ class Prefs(context: Context) {
 
     var onboardingDone: Boolean
         get() = sp.getBoolean(KEY_ONBOARDING, false)
-        set(v) = sp.edit().putBoolean(KEY_ONBOARDING, v).apply()
+        set(v) = edit { it.putBoolean(KEY_ONBOARDING, v) }
 
     var themeMode: ThemeMode
         get() = runCatching {
             ThemeMode.valueOf(sp.getString(KEY_THEME, null) ?: "SYSTEM")
         }.getOrDefault(ThemeMode.SYSTEM)
-        set(v) = sp.edit().putString(KEY_THEME, v.name).apply()
+        set(v) = edit { it.putString(KEY_THEME, v.name) }
 
     var lang: Lang
         get() = runCatching {
             Lang.valueOf(sp.getString(KEY_LANG, null) ?: "SYSTEM")
         }.getOrDefault(Lang.SYSTEM)
-        set(v) = sp.edit().putString(KEY_LANG, v.name).apply()
+        set(v) = edit { it.putString(KEY_LANG, v.name) }
 
     var allowedApps: Set<String>
         get() = sp.getStringSet(KEY_ALLOWED, emptySet()) ?: emptySet()
-        set(v) = sp.edit().putStringSet(KEY_ALLOWED, v).apply()
+        set(v) = edit { it.putStringSet(KEY_ALLOWED, v) }
 
     var blockedApps: Set<String>
         get() = sp.getStringSet(KEY_BLOCKED, emptySet()) ?: emptySet()
-        set(v) = sp.edit().putStringSet(KEY_BLOCKED, v).apply()
+        set(v) = edit { it.putStringSet(KEY_BLOCKED, v) }
 
     var customBlockWords: Set<String>
         get() = sp.getStringSet(KEY_BLOCK_WORDS, emptySet()) ?: emptySet()
-        set(v) = sp.edit().putStringSet(KEY_BLOCK_WORDS, v).apply()
+        set(v) = edit { it.putStringSet(KEY_BLOCK_WORDS, v) }
 
     var customAllowWords: Set<String>
         get() = sp.getStringSet(KEY_ALLOW_WORDS, emptySet()) ?: emptySet()
-        set(v) = sp.edit().putStringSet(KEY_ALLOW_WORDS, v).apply()
+        set(v) = edit { it.putStringSet(KEY_ALLOW_WORDS, v) }
 
     var seenApps: Set<String>
         get() = sp.getStringSet(KEY_SEEN, emptySet()) ?: emptySet()
-        set(v) = sp.edit().putStringSet(KEY_SEEN, v).apply()
+        set(v) = edit { it.putStringSet(KEY_SEEN, v) }
 
     @Synchronized
     fun rememberApp(pkg: String) {
@@ -202,7 +236,11 @@ class Prefs(context: Context) {
     }
 
     companion object {
-        val DEFAULT_BLOCK_WORDS = setOf(
+        /**
+         * Больше не засевается. Оставлено только для того, чтобы миграция могла узнать
+         * нетронутый набор и убрать его. Через пару версий можно удалить вместе с migrate().
+         */
+        private val LEGACY_SEED_WORDS = setOf(
             "акции", "деньги", "займы", "кредит", "обновление",
             "подписка", "процент", "рекомендации", "скидка"
         )
@@ -221,7 +259,8 @@ class Prefs(context: Context) {
         private const val KEY_BLOCK_WORDS = "custom_block_words"
         private const val KEY_ALLOW_WORDS = "custom_allow_words"
         private const val KEY_SEEN = "seen_apps"
-        private const val KEY_SEEDED = "seeded_v2"
+        private const val KEY_SEEDED_LEGACY = "seeded_v2"
+        private const val KEY_MIGRATED_V3 = "migrated_v3"
         private const val CACHE_MS = 5_000L
         private const val KEY_ONBOARDING = "onboarding_done"
         private const val KEY_REGION = "region"

@@ -1,0 +1,19 @@
+Main
+* The app no longer seeds its own stop words on install. It used to add "credit", "percent", "money" and six more, which cost people verification codes and transfer notifications. Words you added yourself are kept
+* App names, not package names, are shown in the log and in the app picker
+* The "Autostart" button is back on Xiaomi, Huawei, Oppo and Vivo
+
+Notifications
+* The filter no longer fights apps that repost a notification after it is dismissed — that could end in an endless loop and a drained battery
+* Log reasons are translated: with an English interface they no longer stay in Russian
+* Deposit interest notifications are no longer lost
+
+Updates
+* Before installing, the downloaded file is checked to carry the same signing key as the installed app
+* A failed download no longer disappears without a word
+* A clear explanation of why the install-from-file permission is needed
+
+Other
+* No more crash on firmware without the notification access settings screen
+* The log can now remove an app from the allowlist, not just add it
+* Notification matching is noticeably faster

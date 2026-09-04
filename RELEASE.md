@@ -34,7 +34,7 @@
 3. В теле указать:
 
 ```
-Repo: https://github.com/OWNER/NotifyGuard
+Repo: https://github.com/Desloft-debug/NotifyGuard
 License: MIT
 Fastlane metadata: fastlane/metadata/android/ (en-US, ru)
 Releases: signed APK attached to each tag

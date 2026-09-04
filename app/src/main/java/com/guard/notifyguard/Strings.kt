@@ -107,7 +107,10 @@ data class Strings(
     val updateInstall: String,
     val updateFailed: String,
     val updateNeedPermission: String,
+    val updateNeedPermissionHint: String,
     val updateGrant: String,
+    val updateSignatureMismatch: String,
+    val updateDownloadFailed: String,
     val currentVersion: String,
     val updateNetworkNote: String,
 
@@ -117,6 +120,7 @@ data class Strings(
     val emptyNotifications: String,
     val emptyCalls: String,
     val unwhitelist: String,
+    val rewhitelist: String,
     val hiddenText: String,
     val silenced: String,
 
@@ -342,7 +346,10 @@ val RU = Strings(
     updateInstall = "Установить",
     updateFailed = "Не удалось проверить обновления",
     updateNeedPermission = "Разрешите установку приложений из этого источника",
+    updateNeedPermissionHint = "Android ставит приложения из файла только по отдельному разрешению. Оно выдаётся один раз и только этому приложению.",
     updateGrant = "Разрешить",
+    updateSignatureMismatch = "Скачанный файл подписан другим ключом. Установка отменена.",
+    updateDownloadFailed = "Не удалось скачать обновление",
     currentVersion = "Текущая версия",
     updateNetworkNote = "Интернет используется только для проверки и загрузки обновлений. Тексты уведомлений никуда не отправляются.",
 
@@ -352,6 +359,7 @@ val RU = Strings(
     emptyNotifications = "Пока ничего не скрыто",
     emptyCalls = "Приглушённых звонков не было",
     unwhitelist = "Больше не скрывать это приложение",
+    rewhitelist = "Снова фильтровать это приложение",
     hiddenText = "текст не сохранён",
     silenced = "приглушён",
 
@@ -577,7 +585,10 @@ val EN = Strings(
     updateInstall = "Install",
     updateFailed = "Couldn't check for updates",
     updateNeedPermission = "Allow installing apps from this source",
+    updateNeedPermissionHint = "Android installs apps from a file only after a separate permission. It is granted once and only to this app.",
     updateGrant = "Allow",
+    updateSignatureMismatch = "The downloaded file is signed with a different key. Install cancelled.",
+    updateDownloadFailed = "Couldn't download the update",
     currentVersion = "Current version",
     updateNetworkNote = "The network is used only to check and download updates. Notification text is never sent anywhere.",
 
@@ -587,6 +598,7 @@ val EN = Strings(
     emptyNotifications = "Nothing hidden yet",
     emptyCalls = "No silenced calls yet",
     unwhitelist = "Stop hiding this app",
+    rewhitelist = "Filter this app again",
     hiddenText = "text not stored",
     silenced = "silenced",
 
@@ -710,3 +722,7 @@ val EN = Strings(
 )
 
 val LocalStrings = staticCompositionLocalOf { RU }
+
+// Причины блокировки собираются в ReasonText, а не в Strings: иначе конструктор
+// data class Strings пришлось бы расширять на два десятка полей ради журнала.
+val LocalLang = staticCompositionLocalOf { Lang.SYSTEM }

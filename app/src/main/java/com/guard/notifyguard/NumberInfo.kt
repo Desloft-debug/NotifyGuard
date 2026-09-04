@@ -33,7 +33,7 @@ object NumberLookup {
         "371" to "Латвия", "370" to "Литва", "372" to "Эстония",
         "420" to "Чехия", "421" to "Словакия", "36" to "Венгрия",
         "40" to "Румыния", "359" to "Болгария", "381" to "Сербия",
-        "998" to "Узбекистан", "976" to "Монголия", "84" to "Вьетнам"
+        "976" to "Монголия", "84" to "Вьетнам"
     )
 
     // Только крупные коды
@@ -62,14 +62,11 @@ object NumberLookup {
     private val RU_OPERATORS = listOf(
         Triple(900, 902, "Tele2"), Triple(903, 906, "Билайн"),
         Triple(908, 908, "Tele2"), Triple(909, 909, "Билайн"),
-        Triple(910, 919, "МТС"), Triple(920, 931, "МегаФон"),
-        Triple(932, 932, "МегаФон"), Triple(933, 933, "МегаФон"),
-        Triple(934, 935, "МегаФон"), Triple(936, 938, "МегаФон"),
-        Triple(939, 939, "МегаФон"), Triple(950, 953, "Tele2"),
-        Triple(958, 958, "виртуальные операторы"), Triple(960, 968, "Билайн"),
-        Triple(969, 969, "виртуальные операторы"), Triple(977, 978, "МТС"),
-        Triple(980, 989, "МТС"), Triple(991, 996, "Tele2"),
-        Triple(999, 999, "МегаФон / Yota")
+        Triple(910, 919, "МТС"), Triple(920, 939, "МегаФон"),
+        Triple(950, 953, "Tele2"), Triple(958, 958, "виртуальные операторы"),
+        Triple(960, 968, "Билайн"), Triple(969, 969, "виртуальные операторы"),
+        Triple(977, 978, "МТС"), Triple(980, 989, "МТС"),
+        Triple(991, 996, "Tele2"), Triple(999, 999, "МегаФон / Yota")
     )
 
     fun analyze(raw: String, history: List<CallEntry>): NumberInfo {
@@ -150,9 +147,8 @@ object NumberLookup {
             if (neighbours >= 3) signals.add("blockcalling")
         }
 
-        if (kind != NumberKind.SHORT && (digits.length < 10 || digits.length > 15)) {
-            signals.add("length")
-        }
+        // Короткие номера отсеяны выше отдельной веткой, так что проверять kind тут незачем.
+        if (digits.length < 10 || digits.length > 15) signals.add("length")
 
         val risk = when {
             signals.contains("premium") -> RiskLevel.HIGH

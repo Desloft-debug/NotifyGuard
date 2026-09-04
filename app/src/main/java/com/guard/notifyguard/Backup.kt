@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 
 // Копия настроек пишется в файл через системный выбор места,
 // поэтому сохранить можно в Google Диск, локально или куда угодно ещё.
@@ -37,55 +38,116 @@ object Backup {
     fun write(context: Context, uri: Uri, prefs: Prefs): Result<Unit> = runCatching {
         val out = context.contentResolver.openOutputStream(uri)
             ?: error("Нет доступа к файлу")
-        out.use { it.write(export(prefs).toByteArray()) }
+        out.use { it.write(export(prefs).toByteArray(Charsets.UTF_8)) }
     }
 
     fun read(context: Context, uri: Uri, prefs: Prefs): Result<Int> = runCatching {
         val input = context.contentResolver.openInputStream(uri)
             ?: error("Нет доступа к файлу")
-        val text = input.use {
-            val bytes = it.readBytes()
-            require(bytes.size <= MAX_BYTES) { "Файл слишком большой" }
-            String(bytes)
-        }
+        // Раньше здесь был readBytes() и только потом проверка длины: файл на два
+        // гигабайта из облачного хранилища ронял приложение по OOM раньше проверки.
+        val text = input.use { readLimited(it, MAX_BYTES) }
         apply(text, prefs)
     }
 
-    // Файл может быть чужим или испорченным: читаем только известные ключи,
-    // длины и количество ограничиваем, всё остальное игнорируем.
+    private fun readLimited(input: java.io.InputStream, limit: Int): String {
+        val out = ByteArrayOutputStream(16 * 1024)
+        val buf = ByteArray(16 * 1024)
+        while (true) {
+            val n = input.read(buf)
+            if (n <= 0) break
+            require(out.size() + n <= limit) { "Файл слишком большой" }
+            out.write(buf, 0, n)
+        }
+        return out.toString(Charsets.UTF_8.name())
+    }
+
+    /**
+     * Файл может быть чужим или испорченным: читаем только известные ключи,
+     * длины и количество ограничиваем, всё остальное игнорируем.
+     *
+     * Разбор и запись разделены. Раньше настройки писались по одной прямо по ходу
+     * разбора, и файл, испорченный на середине, оставлял часть настроек из копии,
+     * а часть старыми — понять, какие именно, было нельзя. Теперь любая ошибка
+     * происходит до первой записи.
+     *
+     * Возвращает количество применённых пунктов. Значение сейчас нигде не показывается,
+     * но оно логически осмысленно: настройка — один, каждый список — один.
+     */
     fun apply(text: String, prefs: Prefs): Int {
+        val plan = parse(text)
+        return commit(plan, prefs)
+    }
+
+    private class Plan {
+        val flags = LinkedHashMap<String, Boolean>()
+        var region: Region? = null
+        var theme: ThemeMode? = null
+        var lang: Lang? = null
+        var blockWords: Set<String>? = null
+        var allowWords: Set<String>? = null
+        var allowedApps: Set<String>? = null
+        var blockedApps: Set<String>? = null
+
+        val size: Int
+            get() = flags.size +
+                listOfNotNull(region, theme, lang).size +
+                listOfNotNull(blockWords, allowWords, allowedApps, blockedApps).size
+    }
+
+    private val FLAG_KEYS = listOf(
+        "filterEnabled", "strictMode", "silenceUnknownCalls", "storeLogText",
+        "keepAlive", "updateCheck", "remoteDict"
+    )
+
+    private fun parse(text: String): Plan {
         val root = JSONObject(text)
         require(root.optInt("format") == FORMAT) { "Неизвестный формат" }
-        var changed = 0
 
-        fun flag(key: String, set: (Boolean) -> Unit) {
-            if (root.has(key)) {
-                set(root.getBoolean(key)); changed++
-            }
+        val plan = Plan()
+        for (key in FLAG_KEYS) {
+            // getBoolean бросит исключение на мусорном значении — и это правильно:
+            // до записи ещё ничего не дошло, пользователь узнает, что файл битый.
+            if (root.has(key)) plan.flags[key] = root.getBoolean(key)
         }
-        flag("filterEnabled") { prefs.filterEnabled = it }
-        flag("strictMode") { prefs.strictMode = it }
-        flag("silenceUnknownCalls") { prefs.silenceUnknownCalls = it }
-        flag("storeLogText") { prefs.storeLogText = it }
-        flag("keepAlive") { prefs.keepAlive = it }
-        flag("updateCheck") { prefs.updateCheckEnabled = it }
-        flag("remoteDict") { prefs.remoteDictEnabled = it }
 
         root.optString("region").takeIf { it.isNotBlank() }?.let { v ->
-            runCatching { prefs.region = Region.valueOf(v) }.onSuccess { changed++ }
+            plan.region = runCatching { Region.valueOf(v) }.getOrNull()
         }
         root.optString("theme").takeIf { it.isNotBlank() }?.let { v ->
-            runCatching { prefs.themeMode = ThemeMode.valueOf(v) }.onSuccess { changed++ }
+            plan.theme = runCatching { ThemeMode.valueOf(v) }.getOrNull()
         }
         root.optString("lang").takeIf { it.isNotBlank() }?.let { v ->
-            runCatching { prefs.lang = Lang.valueOf(v) }.onSuccess { changed++ }
+            plan.lang = runCatching { Lang.valueOf(v) }.getOrNull()
         }
 
-        words(root, "blockWords")?.let { prefs.customBlockWords = it; changed += it.size }
-        words(root, "allowWords")?.let { prefs.customAllowWords = it; changed += it.size }
-        packages(root, "allowedApps")?.let { prefs.allowedApps = it; changed += it.size }
-        packages(root, "blockedApps")?.let { prefs.blockedApps = it; changed += it.size }
-        return changed
+        plan.blockWords = words(root, "blockWords")
+        plan.allowWords = words(root, "allowWords")
+        plan.allowedApps = packages(root, "allowedApps")
+        plan.blockedApps = packages(root, "blockedApps")
+        return plan
+    }
+
+    private fun commit(plan: Plan, prefs: Prefs): Int {
+        plan.flags.forEach { (key, value) ->
+            when (key) {
+                "filterEnabled" -> prefs.filterEnabled = value
+                "strictMode" -> prefs.strictMode = value
+                "silenceUnknownCalls" -> prefs.silenceUnknownCalls = value
+                "storeLogText" -> prefs.storeLogText = value
+                "keepAlive" -> prefs.keepAlive = value
+                "updateCheck" -> prefs.updateCheckEnabled = value
+                "remoteDict" -> prefs.remoteDictEnabled = value
+            }
+        }
+        plan.region?.let { prefs.region = it }
+        plan.theme?.let { prefs.themeMode = it }
+        plan.lang?.let { prefs.lang = it }
+        plan.blockWords?.let { prefs.customBlockWords = it }
+        plan.allowWords?.let { prefs.customAllowWords = it }
+        plan.allowedApps?.let { prefs.allowedApps = it }
+        plan.blockedApps?.let { prefs.blockedApps = it }
+        return plan.size
     }
 
     private fun words(root: JSONObject, key: String): Set<String>? {

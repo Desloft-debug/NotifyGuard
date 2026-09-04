@@ -12,12 +12,14 @@ android {
         applicationId = "com.guard.notifyguard"
         minSdk = 29
         targetSdk = 34
-        versionCode = 14
-        versionName = "3.0"
+        versionCode = 15
+        versionName = "3.1"
 
-        // Репозиторий, откуда берутся обновления.
-        // Если сменится имя аккаунта — поправить здесь.
-        buildConfigField("String", "GITHUB_OWNER", "\"severovostok317-debug\"")
+        // Репозиторий, откуда берутся обновления, онлайн-словарь и куда уходят issue.
+        // Должен совпадать с `git remote get-url origin`: если сменится имя аккаунта,
+        // а здесь останется старое, приложение продолжит ходить на старый репозиторий
+        // и не увидит ни новых релизов, ни правок словаря.
+        buildConfigField("String", "GITHUB_OWNER", "\"Desloft-debug\"")
         buildConfigField("String", "GITHUB_REPO", "\"NotifyGuard\"")
 
         // В APK попадают только нужные локали
@@ -83,6 +85,16 @@ android {
         compose = true
         buildConfig = true
     }
+
+    testOptions {
+        unitTests {
+            // Тесты в app/src/test не трогают Android: словари, границы слов,
+            // сравнение версий и разбор номера — чистый Kotlin, Robolectric не нужен.
+            // Флаг на случай, если тест всё же дотянется до заглушки android.jar:
+            // она вернёт значение по умолчанию вместо RuntimeException("Stub!").
+            isReturnDefaultValues = true
+        }
+    }
 }
 
 dependencies {
@@ -95,4 +107,6 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    testImplementation("junit:junit:4.13.2")
 }

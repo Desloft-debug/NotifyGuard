@@ -42,7 +42,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Locale
 
@@ -87,7 +89,7 @@ fun App() {
     }
 
     GuardTheme(dark) {
-        CompositionLocalProvider(LocalStrings provides strings) {
+        CompositionLocalProvider(LocalStrings provides strings, LocalLang provides lang) {
             if (!regionChosen) {
                 WelcomeScreen(
                     initial = prefs.region,
@@ -362,6 +364,7 @@ private fun ProtectScreen(
 
     var showPicker by remember { mutableStateOf(false) }
     var updateState by remember { mutableStateOf<UpdateState>(UpdateState.Idle) }
+    var needInstallPermission by remember { mutableStateOf(false) }
 
     suspend fun check(manual: Boolean) {
         updateState = UpdateState.Checking
@@ -399,11 +402,14 @@ private fun ProtectScreen(
     val roleLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { onRefresh() }
+    // Чтение и запись идут через SAF: провайдер вроде Google Диска может отвечать
+    // секундами, а колбэк лаунчера приходит в главный поток. Раньше файл читался
+    // и писался прямо здесь — готовый ANR на медленном хранилище.
     val saveLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
     ) { uri ->
-        if (uri != null) {
-            Backup.write(context, uri, prefs)
+        if (uri != null) scope.launch {
+            withContext(Dispatchers.IO) { Backup.write(context, uri, prefs) }
                 .onSuccess { notify(s.backupSaved) }
                 .onFailure { notify(s.backupFailed) }
         }
@@ -411,8 +417,8 @@ private fun ProtectScreen(
     val loadLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
-        if (uri != null) {
-            Backup.read(context, uri, prefs)
+        if (uri != null) scope.launch {
+            withContext(Dispatchers.IO) { Backup.read(context, uri, prefs) }
                 .onSuccess { notify(s.backupLoaded); onRefresh() }
                 .onFailure { notify(s.backupFailed) }
         }
@@ -447,13 +453,26 @@ private fun ProtectScreen(
         item {
             AnimatedVisibility(
                 visible = updateState is UpdateState.Downloading ||
-                    updateState is UpdateState.Ready,
+                    updateState is UpdateState.Ready ||
+                    updateState is UpdateState.Failed,
                 enter = fadeIn() + expandVertically(),
                 exit = fadeOut() + shrinkVertically()
             ) {
                 DownloadCard(updateState) { file ->
-                    if (Updater.canInstall(context)) Updater.install(context, file)
-                    else Updater.requestInstallPermission(context)
+                    scope.launch {
+                        when {
+                            // Разрешение на установку из файла просили молча, без единого
+                            // слова о том, зачем пользователя выкинуло в системные настройки.
+                            !Updater.canInstall(context) -> needInstallPermission = true
+                            // Android откажется ставить чужую подпись и сам, но узнать
+                            // об этом лучше до диалога установщика. Разбор APK — чтение
+                            // файла, поэтому не в главном потоке.
+                            !withContext(Dispatchers.IO) {
+                                Updater.signatureMatches(context, file)
+                            } -> notify(s.updateSignatureMismatch)
+                            else -> Updater.install(context, file)
+                        }
+                    }
                 }
             }
         }
@@ -480,7 +499,8 @@ private fun ProtectScreen(
                         Spacer(Modifier.height(12.dp))
                         Button(
                             onClick = {
-                                context.startActivity(
+                                openSettings(
+                                    context,
                                     Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
                                 )
                             },
@@ -498,7 +518,7 @@ private fun ProtectScreen(
                     if (listenerOn) s.accessNotificationsOn else s.accessNotificationsOff,
                     s.actionOpenSettings
                 ) {
-                    context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                    openSettings(context, Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 }
                 StatusRow(
                     s.accessCalls, screeningOn,
@@ -722,6 +742,24 @@ private fun ProtectScreen(
             onDismiss = { showPicker = false }
         )
     }
+
+    if (needInstallPermission) {
+        AlertDialog(
+            onDismissRequest = { needInstallPermission = false },
+            title = { Text(s.updateNeedPermission) },
+            text = { Text(s.updateNeedPermissionHint) },
+            confirmButton = {
+                TextButton(onClick = {
+                    needInstallPermission = false
+                    Updater.requestInstallPermission(context)
+                }) { Text(s.updateGrant) }
+            },
+            dismissButton = {
+                TextButton(onClick = { needInstallPermission = false }) { Text(s.cancel) }
+            },
+            shape = RoundedCornerShape(20.dp)
+        )
+    }
 }
 
 @Composable
@@ -805,7 +843,7 @@ private fun HelpScreen(
             }
             item {
                 SetupStep(1, s.setupStep1, s.setupStep1Text, listenerOn, s.actionOpenSettings) {
-                    context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                    openSettings(context, Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
                 }
             }
             item {
@@ -1128,7 +1166,6 @@ private fun InfoRow(label: String, value: String) {
 private sealed interface UpdateState {
     data object Idle : UpdateState
     data object Checking : UpdateState
-    data object UpToDate : UpdateState
     data object Failed : UpdateState
     data class Available(val info: ReleaseInfo) : UpdateState
     data class Downloading(val progress: Float) : UpdateState
@@ -1191,6 +1228,15 @@ private fun DownloadCard(state: UpdateState, onInstall: (File) -> Unit) {
                         onClick = { onInstall(state.file) },
                         shape = RoundedCornerShape(14.dp)
                     ) { Text(s.updateInstall) }
+                }
+                // Раньше карточка при ошибке просто исчезала, и обрыв связи
+                // выглядел так, будто ничего не произошло.
+                is UpdateState.Failed -> {
+                    Text(
+                        s.updateDownloadFailed,
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
                 }
                 else -> Unit
             }
@@ -1606,6 +1652,7 @@ private fun AppGroupCard(
     onSettings: () -> Unit
 ) {
     val s = LocalStrings.current
+    val lang = LocalLang.current
     val context = LocalContext.current
     val label = remember(pkg) { appLabel(context, pkg) }
 
@@ -1650,7 +1697,7 @@ private fun AppGroupCard(
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Text(
-                            "${e.timeText()} · ${e.reason}",
+                            "${e.timeText()} · ${ReasonText.render(e.reason, lang)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1673,24 +1720,15 @@ private fun AppGroupCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                if (!blocked && !allowed) {
+                // Условие было `!blocked && !allowed`: добавить в белый список можно,
+                // а убрать оттуда — нет, кнопка исчезала сразу после нажатия.
+                if (!blocked) {
                     TextButton(onClick = onAllow, contentPadding = PaddingValues(0.dp)) {
-                        Text(s.unwhitelist)
+                        Text(if (allowed) s.rewhitelist else s.unwhitelist)
                     }
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun LogCard(content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(Modifier.padding(14.dp), content = content)
     }
 }
 
@@ -1709,44 +1747,6 @@ private fun Section(title: String, content: @Composable ColumnScope.() -> Unit) 
             )
             Spacer(Modifier.height(10.dp))
             content()
-        }
-    }
-}
-
-@Composable
-private fun NavTile(
-    title: String,
-    subtitle: String,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit
-) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.primaryContainer
-        ),
-        shape = RoundedCornerShape(20.dp),
-        modifier = modifier.clickable { onClick() }
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Icon(
-                if (title == LocalStrings.current.openLog) Icons.Filled.List
-                else Icons.Filled.Search,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-            Spacer(Modifier.height(10.dp))
-            Text(
-                title,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer
-            )
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
         }
     }
 }
@@ -1958,6 +1958,26 @@ private fun OnResume(action: () -> Unit) {
         owner.lifecycle.addObserver(obs)
         onDispose { owner.lifecycle.removeObserver(obs) }
     }
+}
+
+/**
+ * На части прошивок нужной активности просто нет, и startActivity бросает
+ * ActivityNotFoundException. Раньше три вызова ACTION_NOTIFICATION_LISTENER_SETTINGS
+ * шли без защиты, и приложение падало прямо с главного экрана.
+ * Возвращает false, если не удалось открыть ни целевой экран, ни карточку приложения.
+ */
+private fun openSettings(
+    context: Context,
+    intent: Intent,
+    fallbackToAppDetails: Boolean = true
+): Boolean {
+    if (runCatching { context.startActivity(intent); true }.getOrDefault(false)) return true
+    if (!fallbackToAppDetails) return false
+    val details = Intent(
+        Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        Uri.parse("package:${context.packageName}")
+    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    return runCatching { context.startActivity(details); true }.getOrDefault(false)
 }
 
 private fun openAppNotificationSettings(context: Context, pkg: String) {
