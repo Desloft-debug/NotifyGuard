@@ -12,6 +12,9 @@ import androidx.compose.ui.unit.sp
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+// Своя палитра, без Material You: приложение должно выглядеть одинаково
+// на любой прошивке, а не подстраиваться под обои.
+
 private val Ink = Color(0xFF12141A)
 private val Slate = Color(0xFF3E4553)
 private val Accent = Color(0xFF4C6FFF)

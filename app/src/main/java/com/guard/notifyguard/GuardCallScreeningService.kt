@@ -7,11 +7,9 @@ import java.util.concurrent.Executors
 /**
  * Звонок с номера вне контактов проходит беззвучно.
  *
- * onScreenCall вызывается в главном потоке, а системе нужен ответ за считаные секунды.
- * Раньше прямо здесь делался contentResolver.query к провайдеру контактов: на телефоне
- * с большой адресной книгой это блокировка главного потока в момент входящего звонка.
- * Теперь поиск уходит в отдельный поток, а respondToCall вызывается оттуда —
- * API это допускает, ответ по определению асинхронный.
+ * onScreenCall приходит в главный поток, а ответить надо за считаные секунды.
+ * Поиск по контактам — это запрос к провайдеру, на большой адресной книге он
+ * не мгновенный, поэтому уводим его в свой поток. respondToCall оттуда звать можно.
  */
 class GuardCallScreeningService : CallScreeningService() {
 
@@ -32,8 +30,8 @@ class GuardCallScreeningService : CallScreeningService() {
         val number = callDetails.handle?.schemeSpecificPart
 
         io.execute {
-            // Если что-то пойдёт не так, звонок должен пройти обычным образом:
-            // не приглушить лишний раз хуже, чем заглушить нужный.
+            // при любой ошибке считаем номер знакомым: лучше не приглушить,
+            // чем заглушить нужный звонок
             val known = runCatching { ContactsRepo.isKnown(this, number) }.getOrDefault(true)
 
             if (known) {

@@ -6,8 +6,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 
-// Копия настроек пишется в файл через системный выбор места,
-// поэтому сохранить можно в Google Диск, локально или куда угодно ещё.
+// Копия настроек через SAF: человек сам выбирает, куда класть файл.
 object Backup {
 
     private const val FORMAT = 1
@@ -37,15 +36,14 @@ object Backup {
 
     fun write(context: Context, uri: Uri, prefs: Prefs): Result<Unit> = runCatching {
         val out = context.contentResolver.openOutputStream(uri)
-            ?: error("Нет доступа к файлу")
+            ?: error("no access to file")
         out.use { it.write(export(prefs).toByteArray(Charsets.UTF_8)) }
     }
 
     fun read(context: Context, uri: Uri, prefs: Prefs): Result<Int> = runCatching {
         val input = context.contentResolver.openInputStream(uri)
-            ?: error("Нет доступа к файлу")
-        // Раньше здесь был readBytes() и только потом проверка длины: файл на два
-        // гигабайта из облачного хранилища ронял приложение по OOM раньше проверки.
+            ?: error("no access to file")
+        // читаем с потолком: из облака может приехать что угодно
         val text = input.use { readLimited(it, MAX_BYTES) }
         apply(text, prefs)
     }
@@ -56,23 +54,20 @@ object Backup {
         while (true) {
             val n = input.read(buf)
             if (n <= 0) break
-            require(out.size() + n <= limit) { "Файл слишком большой" }
+            require(out.size() + n <= limit) { "file too big" }
             out.write(buf, 0, n)
         }
         return out.toString(Charsets.UTF_8.name())
     }
 
     /**
-     * Файл может быть чужим или испорченным: читаем только известные ключи,
-     * длины и количество ограничиваем, всё остальное игнорируем.
+     * Файл может быть чужим или битым: берём только знакомые ключи, длины и количество
+     * режем, остальное игнорируем.
      *
-     * Разбор и запись разделены. Раньше настройки писались по одной прямо по ходу
-     * разбора, и файл, испорченный на середине, оставлял часть настроек из копии,
-     * а часть старыми — понять, какие именно, было нельзя. Теперь любая ошибка
-     * происходит до первой записи.
+     * Разбор отделён от записи специально — иначе файл, испорченный на середине,
+     * оставит половину настроек из копии, а половину старыми.
      *
-     * Возвращает количество применённых пунктов. Значение сейчас нигде не показывается,
-     * но оно логически осмысленно: настройка — один, каждый список — один.
+     * Возвращает количество применённых пунктов (настройка — один, список — один).
      */
     fun apply(text: String, prefs: Prefs): Int {
         val plan = parse(text)
@@ -102,12 +97,11 @@ object Backup {
 
     private fun parse(text: String): Plan {
         val root = JSONObject(text)
-        require(root.optInt("format") == FORMAT) { "Неизвестный формат" }
+        require(root.optInt("format") == FORMAT) { "unknown format" }
 
         val plan = Plan()
         for (key in FLAG_KEYS) {
-            // getBoolean бросит исключение на мусорном значении — и это правильно:
-            // до записи ещё ничего не дошло, пользователь узнает, что файл битый.
+            // getBoolean на мусоре бросит — и хорошо, до записи дело ещё не дошло
             if (root.has(key)) plan.flags[key] = root.getBoolean(key)
         }
 

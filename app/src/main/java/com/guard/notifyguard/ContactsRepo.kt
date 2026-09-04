@@ -16,7 +16,7 @@ object ContactsRepo {
     // Есть ли номер в контактах.
     fun isKnown(context: Context, number: String?): Boolean {
         if (number.isNullOrBlank()) return false
-        if (!hasPermission(context)) return true
+        if (!hasPermission(context)) return true   // нет доступа - никого не приглушаем
 
         val uri: Uri = Uri.withAppendedPath(
             ContactsContract.PhoneLookup.CONTENT_FILTER_URI,

@@ -8,7 +8,7 @@ import android.net.Uri
 import android.os.Build
 import java.net.URLEncoder
 
-// Обратная связь через GitHub Issues.
+// Обратная связь: открываем форму нового issue с уже заполненным телом.
 object Feedback {
 
     private const val MAX_BODY = 5000
@@ -21,11 +21,12 @@ object Feedback {
         return "$base?title=$t&body=$b"
     }
 
+    // Уходит в issue, поэтому по-английски — читать буду не только я.
     fun diagnostics(): String = buildString {
         appendLine("---")
-        appendLine("Версия: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+        appendLine("App: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
         appendLine("Android: ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
-        appendLine("Устройство: ${Build.MANUFACTURER} ${Build.MODEL}")
+        appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL}")
     }
 
     fun open(context: Context, url: String): Boolean = runCatching {

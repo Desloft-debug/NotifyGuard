@@ -2,8 +2,9 @@ package com.guard.notifyguard
 
 import androidx.compose.runtime.staticCompositionLocalOf
 
-enum class Lang { SYSTEM, RU, EN }
-
+// Тексты интерфейса. Ресурсы тут не подошли: строки нужны и в Compose, и в местах,
+// где Context под рукой нет, а язык переключается внутри приложения, а не системой.
+// TODO: при третьем языке всё-таки перенести в res/values-*.
 data class Strings(
     val appTitle: String,
     val logTitle: String,

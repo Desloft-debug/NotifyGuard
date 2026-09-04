@@ -14,16 +14,14 @@ class GuardNotificationListener : NotificationListenerService() {
     private val known = HashSet<String>(64)
 
     /**
-     * Ключи уведомлений, снятых только что. Нужны из-за того, что onNotificationPosted
-     * приходит и на обновление уже показанного уведомления — с тем же sbn.key.
+     * Ключи только что снятых уведомлений.
      *
-     * Приложение, которое переставляет своё уведомление после снятия (так делают
-     * мессенджеры с «липкими» уведомлениями и часть банковских), без этой защиты
-     * получает бесконечный цикл publish → cancel → publish: журнал на сто записей
-     * вытесняется за секунды, процесс греет батарею, шторка мигает.
+     * onNotificationPosted прилетает и на обновление уже показанного уведомления,
+     * с тем же key. Приложение, которое переставляет своё уведомление после снятия
+     * (мессенджеры с липкими уведомлениями, часть банков), иначе загоняет нас
+     * в цикл publish - cancel - publish: журнал вытесняется за секунды, шторка мигает.
      *
-     * LinkedHashMap в режиме access-order с removeEldestEntry — обычный LRU,
-     * доступ только из главного потока сервиса, поэтому синхронизация не нужна.
+     * Обычный LRU. Доступ только из главного потока сервиса, замок не нужен.
      */
     private val recentlyHandled = object : LinkedHashMap<String, Long>(64, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Long>) = size > 200
@@ -43,7 +41,7 @@ class GuardNotificationListener : NotificationListenerService() {
 
     override fun onListenerDisconnected() {
         alive = false
-        // после обновления apk система отвязывает сервис молча
+        // после обновления apk система отвязывает слушатель молча
         rebind(this)
     }
 
@@ -81,10 +79,7 @@ class GuardNotificationListener : NotificationListenerService() {
 
         recentlyHandled[sbn.key] = now
 
-        // cancelNotification() ничего не возвращает и не бросает исключение, если система
-        // отказалась убирать уведомление. Прежняя проверка runCatching{}.isSuccess была
-        // всегда true, и приписка «(не удалось снять)» не появлялась ни разу.
-        // Не обещаем того, чего не знаем.
+        // cancelNotification ничего не возвращает: получилось снять или нет — не узнать.
         runCatching { cancelNotification(sbn.key) }
 
         GuardLog.addNotification(
@@ -124,12 +119,9 @@ class GuardNotificationListener : NotificationListenerService() {
             }
         }
 
-        // Вызывается при открытии приложения: если разрешение есть,
-        // а сервис не привязан, просим систему привязать его молча.
+        // дёргается при открытии приложения и из воркера
         fun ensureBound(context: Context) {
             if (!alive && isPermitted(context)) rebind(context)
         }
-
-        fun isEnabled(context: Context): Boolean = isPermitted(context)
     }
 }

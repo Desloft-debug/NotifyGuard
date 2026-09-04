@@ -3,35 +3,15 @@ package com.guard.notifyguard
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import java.util.concurrent.Executors
 
-private val formatter = ThreadLocal.withInitial {
-    SimpleDateFormat("dd.MM HH:mm", Locale.getDefault())
-}
-
-private fun fmt(ts: Long): String = formatter.get()!!.format(Date(ts))
-
-data class LogEntry(
-    val pkg: String,
-    val title: String,
-    val reason: String,
-    val time: Long
-) {
-    fun timeText(): String = fmt(time)
-}
-
-data class CallEntry(
-    val number: String,
-    val silenced: Boolean,
-    val time: Long
-) {
-    fun timeText(): String = fmt(time)
-}
-
-// Локальный журнал.
+/**
+ * Локальный журнал: последние LIMIT записей по уведомлениям и столько же по звонкам.
+ *
+ * Списки держим в памяти под общим замком, на диск пишем из отдельного потока.
+ * Иначе запись из слушателя и очистка с экрана лезут в SharedPreferences
+ * из разных потоков и порядок операций перестаёт быть очевидным.
+ */
 object GuardLog {
 
     private const val FILE = "notifyguard_log"
@@ -46,69 +26,110 @@ object GuardLog {
         }
     }
 
+    private val lock = Any()
+    private var notifList: MutableList<LogEntry>? = null
+    private var callList: MutableList<CallEntry>? = null
+
     private fun sp(c: Context) =
         c.applicationContext.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
     fun addNotification(context: Context, entry: LogEntry) {
         val app = context.applicationContext
-        io.execute {
-            runCatching {
-                val store = sp(app)
-                val arr = JSONArray(store.getString(KEY_NOTIF, "[]"))
-                val out = JSONArray()
-                out.put(
-                    JSONObject()
-                        .put("p", entry.pkg)
-                        .put("t", entry.title)
-                        .put("r", entry.reason)
-                        .put("ts", entry.time)
-                )
-                for (i in 0 until minOf(arr.length(), LIMIT - 1)) out.put(arr.get(i))
-                store.edit().putString(KEY_NOTIF, out.toString()).apply()
-            }
+        val json = synchronized(lock) {
+            val list = notifications(app)
+            list.add(0, entry)
+            while (list.size > LIMIT) list.removeAt(list.size - 1)
+            notificationsJson(list)
         }
+        save(app, KEY_NOTIF, json)
     }
 
     fun addCall(context: Context, entry: CallEntry) {
         val app = context.applicationContext
-        io.execute {
-            runCatching {
-                val store = sp(app)
-                val arr = JSONArray(store.getString(KEY_CALLS, "[]"))
-                val out = JSONArray()
-                out.put(
-                    JSONObject()
-                        .put("n", entry.number)
-                        .put("s", entry.silenced)
-                        .put("ts", entry.time)
-                )
-                for (i in 0 until minOf(arr.length(), LIMIT - 1)) out.put(arr.get(i))
-                store.edit().putString(KEY_CALLS, out.toString()).apply()
-            }
+        val json = synchronized(lock) {
+            val list = calls(app)
+            list.add(0, entry)
+            while (list.size > LIMIT) list.removeAt(list.size - 1)
+            callsJson(list)
         }
+        save(app, KEY_CALLS, json)
     }
 
-    fun readNotifications(context: Context): List<LogEntry> = runCatching {
-        val arr = JSONArray(sp(context).getString(KEY_NOTIF, "[]"))
-        (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
-            LogEntry(o.optString("p"), o.optString("t"), o.optString("r"), o.optLong("ts"))
-        }
-    }.getOrDefault(emptyList())
+    fun readNotifications(context: Context): List<LogEntry> =
+        synchronized(lock) { notifications(context).toList() }
 
-    fun readCalls(context: Context): List<CallEntry> = runCatching {
-        val arr = JSONArray(sp(context).getString(KEY_CALLS, "[]"))
-        (0 until arr.length()).map { i ->
-            val o = arr.getJSONObject(i)
-            CallEntry(o.optString("n"), o.optBoolean("s"), o.optLong("ts"))
-        }
-    }.getOrDefault(emptyList())
+    fun readCalls(context: Context): List<CallEntry> =
+        synchronized(lock) { calls(context).toList() }
 
     fun clearNotifications(context: Context) {
-        sp(context).edit().remove(KEY_NOTIF).apply()
+        val app = context.applicationContext
+        synchronized(lock) { notifications(app).clear() }
+        save(app, KEY_NOTIF, "[]")
     }
 
     fun clearCalls(context: Context) {
-        sp(context).edit().remove(KEY_CALLS).apply()
+        val app = context.applicationContext
+        synchronized(lock) { calls(app).clear() }
+        save(app, KEY_CALLS, "[]")
+    }
+
+    private fun save(context: Context, key: String, json: String) {
+        io.execute {
+            runCatching { sp(context).edit().putString(key, json).apply() }
+        }
+    }
+
+    // Читаем с диска один раз за жизнь процесса, дальше работаем со списком в памяти.
+    private fun notifications(context: Context): MutableList<LogEntry> =
+        notifList ?: loadNotifications(context).also { notifList = it }
+
+    private fun calls(context: Context): MutableList<CallEntry> =
+        callList ?: loadCalls(context).also { callList = it }
+
+    private fun loadNotifications(context: Context): MutableList<LogEntry> = runCatching {
+        val arr = JSONArray(sp(context).getString(KEY_NOTIF, "[]"))
+        val out = ArrayList<LogEntry>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            out.add(LogEntry(o.optString("p"), o.optString("t"), o.optString("r"), o.optLong("ts")))
+        }
+        out
+    }.getOrDefault(ArrayList())
+
+    private fun loadCalls(context: Context): MutableList<CallEntry> = runCatching {
+        val arr = JSONArray(sp(context).getString(KEY_CALLS, "[]"))
+        val out = ArrayList<CallEntry>(arr.length())
+        for (i in 0 until arr.length()) {
+            val o = arr.getJSONObject(i)
+            out.add(CallEntry(o.optString("n"), o.optBoolean("s"), o.optLong("ts")))
+        }
+        out
+    }.getOrDefault(ArrayList())
+
+    private fun notificationsJson(list: List<LogEntry>): String {
+        val arr = JSONArray()
+        for (e in list) {
+            arr.put(
+                JSONObject()
+                    .put("p", e.pkg)
+                    .put("t", e.title)
+                    .put("r", e.reason)
+                    .put("ts", e.time)
+            )
+        }
+        return arr.toString()
+    }
+
+    private fun callsJson(list: List<CallEntry>): String {
+        val arr = JSONArray()
+        for (e in list) {
+            arr.put(
+                JSONObject()
+                    .put("n", e.number)
+                    .put("s", e.silenced)
+                    .put("ts", e.time)
+            )
+        }
+        return arr.toString()
     }
 }

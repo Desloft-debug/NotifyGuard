@@ -4,7 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** Разбор номера. Всё офлайн и без Android — обычный JVM-тест. */
+/** Разбор номера: план нумерации плюс признаки из журнала. */
 class NumberLookupTest {
 
     private fun call(number: String) = CallEntry(number, true, 0L)

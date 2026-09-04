@@ -72,6 +72,7 @@ object KeepAlive {
         runCatching { context.startActivity(intent) }
     }
 
+    // 15 минут - минимум, который разрешает WorkManager. Чаще всё равно не дадут.
     fun schedule(context: Context) {
         val request = PeriodicWorkRequestBuilder<Watchdog>(15, TimeUnit.MINUTES)
             .setConstraints(Constraints.NONE)

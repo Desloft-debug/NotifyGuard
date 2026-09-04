@@ -3,51 +3,28 @@ package com.guard.notifyguard
 import android.content.Context
 import android.content.SharedPreferences
 
-data class Snapshot(
-    val filterEnabled: Boolean,
-    val strictMode: Boolean,
-    val storeLogText: Boolean,
-    val allowedApps: Set<String>,
-    val blockedApps: Set<String>,
-    val blockWords: List<String>,
-    val allowWords: List<String>,
-    val remoteBlock: List<String>,
-    val remoteAllow: List<String>,
-    val region: Region,
-    val promoWords: List<String>
-)
-
 class Prefs(context: Context) {
 
     private val sp = context.applicationContext
         .getSharedPreferences("notifyguard", Context.MODE_PRIVATE)
 
-    @Volatile
-    private var cached: Snapshot? = null
+    private class Cached(val snapshot: Snapshot, val at: Long)
 
     @Volatile
-    private var cachedAt: Long = 0L
+    private var cache: Cached? = null
 
     init {
         migrate()
     }
 
     /**
-     * Версии до 3.1 при первом запуске молча записывали в пользовательские стоп-слова
-     * девять слов: акции, деньги, займы, кредит, обновление, подписка, процент,
-     * рекомендации, скидка.
+     * Старые версии при первом запуске сами клали в стоп-слова девять слов
+     * (акции, деньги, займы, кредит, обновление, подписка, процент, рекомендации, скидка).
+     * Стоп-слово пользователя бьёт и коды, и суммы, поэтому из-за такого «подарка»
+     * терялись смс банка. Всё это и так есть в PROMO_RU в безопасных формах.
      *
-     * Пользовательские стоп-слова проверяются раньше словарей CODE, MONEY и DELIVERY
-     * и раньше проверки «это личное сообщение» — так и задумано, слово, вписанное
-     * человеком, должно перебивать эвристику. Но эти девять слов человек не вписывал,
-     * и из-за них терялись смс банка («Кредит одобрен, код 4821»), начисления
-     * («начислен процент по вкладу») и личные сообщения со словом «скидка».
-     *
-     * Все девять уже покрыты словарём PROMO_RU в формах, которые не задевают
-     * банковские тексты, так что сеять их незачем.
-     *
-     * Миграция удаляет набор только если он в точности совпадает со старым дефолтным,
-     * то есть пользователь его не трогал. Всё, что добавлено руками, остаётся.
+     * Убираем набор только если он в точности совпадает со старым дефолтным —
+     * то есть человек его не правил. Свои слова не трогаем.
      */
     private fun migrate() {
         if (sp.getBoolean(KEY_MIGRATED_V3, false)) return
@@ -55,25 +32,23 @@ class Prefs(context: Context) {
         val e = sp.edit().putBoolean(KEY_MIGRATED_V3, true).remove(KEY_SEEDED_LEGACY)
         if (stored == LEGACY_SEED_WORDS) e.remove(KEY_BLOCK_WORDS)
         e.apply()
-        cached = null
+        cache = null
     }
 
-    /**
-     * Любая запись сбрасывает снимок. Раньше этого не было, и изменение настройки
-     * вступало в силу с задержкой до CACHE_MS — заметнее всего при восстановлении
-     * резервной копии, которая пишет полтора десятка ключей подряд.
-     */
+    // Любая запись сбрасывает снимок, иначе настройка вступает в силу с задержкой
+    // до CACHE_MS. Заметнее всего на восстановлении копии: там подряд летит
+    // полтора десятка ключей.
     private fun edit(block: (SharedPreferences.Editor) -> Unit) {
         val e = sp.edit()
         block(e)
         e.apply()
-        cached = null
+        cache = null
     }
 
-    /** Кеш на CACHE_MS: не перечитываем коллекции на каждое уведомление. */
+    /** Кеш на CACHE_MS, чтобы не перечитывать коллекции на каждое уведомление. */
     fun snapshot(): Snapshot {
         val now = System.currentTimeMillis()
-        cached?.let { if (now - cachedAt < CACHE_MS) return it }
+        cache?.let { if (now - it.at < CACHE_MS) return it.snapshot }
 
         val reg = region
         val remote = RemoteDictionary.cached(this)
@@ -90,8 +65,7 @@ class Prefs(context: Context) {
             region = reg,
             promoWords = Dictionaries.promoFor(reg)
         )
-        cached = fresh
-        cachedAt = now
+        cache = Cached(fresh, now)
         return fresh
     }
 
@@ -103,7 +77,7 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_STRICT, false)
         set(v) = edit { it.putBoolean(KEY_STRICT, v) }
 
-    // Постоянный сервис: без него процесс выгружается при очистке памяти
+    // без постоянного сервиса процесс выгружают при очистке памяти
     var keepAlive: Boolean
         get() = sp.getBoolean(KEY_KEEP_ALIVE, true)
         set(v) = edit { it.putBoolean(KEY_KEEP_ALIVE, v) }
@@ -236,10 +210,8 @@ class Prefs(context: Context) {
     }
 
     companion object {
-        /**
-         * Больше не засевается. Оставлено только для того, чтобы миграция могла узнать
-         * нетронутый набор и убрать его. Через пару версий можно удалить вместе с migrate().
-         */
+        // Нужен только миграции: узнать нетронутый набор и снести его.
+        // TODO: выкинуть вместе с migrate() версии через две.
         private val LEGACY_SEED_WORDS = setOf(
             "акции", "деньги", "займы", "кредит", "обновление",
             "подписка", "процент", "рекомендации", "скидка"

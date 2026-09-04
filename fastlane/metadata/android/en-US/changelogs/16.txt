@@ -1,0 +1,9 @@
+Changes
+* Clearing the log can no longer get lost if the filter writes a new entry at the same moment
+* Restoring a backup applies settings immediately, with no delay
+* Feedback diagnostics are collected in English, which makes issues easier to read
+
+Under the hood
+* Screens are split into separate files instead of one huge one
+* Filter rule order is now covered by tests, so it cannot be changed unnoticed
+* Removed code nobody called
