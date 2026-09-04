@@ -59,6 +59,7 @@ class GuardForegroundService : Service() {
             .build()
     }
 
+    // IMPORTANCE_MIN и VISIBILITY_SECRET: уведомление обязано быть, но лезть в глаза не должно
     private fun createChannel() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = getSystemService(NotificationManager::class.java)

@@ -4,11 +4,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * Сравнение версий. Ошибка здесь означает либо навязчивое предложение обновиться
- * на ту же версию, либо молчание при вышедшем обновлении — и то и другое
- * пользователь заметит раньше разработчика.
- */
+/** Сравнение версий: либо назойливое «обновитесь» на ту же версию, либо молчание. */
 class UpdaterVersionTest {
 
     @Test
@@ -47,7 +43,6 @@ class UpdaterVersionTest {
 
     @Test
     fun `суффикс пре-релиза не ломает разбор`() {
-        // Раньше "3.1-beta" схлопывалось в [3] и обновление молча не предлагалось.
         assertTrue(Updater.isNewer("3.0", "3.1-beta"))
         assertFalse(Updater.isNewer("3.1", "3.1-beta"))
     }

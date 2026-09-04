@@ -17,7 +17,7 @@ data class NumberInfo(
     val signals: List<String>
 )
 
-// Разбор номера по нумерации + признаки из журнала звонков. Всё офлайн.
+// Разбор номера по плану нумерации плюс признаки из журнала звонков. Всё офлайн.
 object NumberLookup {
 
     private val COUNTRIES = mapOf(
@@ -36,7 +36,7 @@ object NumberLookup {
         "976" to "Монголия", "84" to "Вьетнам"
     )
 
-    // Только крупные коды
+    // только крупные коды, полный справочник тут не нужен
     private val RU_REGIONS = mapOf(
         "495" to "Москва", "499" to "Москва", "498" to "Московская область",
         "812" to "Санкт-Петербург", "813" to "Ленинградская область",
@@ -58,7 +58,7 @@ object NumberLookup {
         "345" to "Тюмень", "349" to "Ханты-Мансийск"
     )
 
-    // Приблизительно: номера переносятся между операторами
+    // Приблизительно: с MNP номер давно мог уехать к другому оператору.
     private val RU_OPERATORS = listOf(
         Triple(900, 902, "Tele2"), Triple(903, 906, "Билайн"),
         Triple(908, 908, "Tele2"), Triple(909, 909, "Билайн"),
@@ -133,7 +133,7 @@ object NumberLookup {
             signals.add("foreign")
         }
 
-        // Признаки из журнала
+        // признаки из журнала звонков
         val sameNumber = history.count { normalize(it.number) == e164 }
         if (sameNumber >= 3) signals.add("repeated")
 
@@ -147,7 +147,7 @@ object NumberLookup {
             if (neighbours >= 3) signals.add("blockcalling")
         }
 
-        // Короткие номера отсеяны выше отдельной веткой, так что проверять kind тут незачем.
+        // короткие ушли выше отдельной веткой
         if (digits.length < 10 || digits.length > 15) signals.add("length")
 
         val risk = when {

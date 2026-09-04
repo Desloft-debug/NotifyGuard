@@ -11,25 +11,17 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <!--
-        Android 11+ прячет от приложения чужие пакеты, пока они не перечислены здесь.
-        Без этого блока getApplicationInfo() бросает NameNotFoundException, и в журнале
-        вместо «WhatsApp» видно «com.whatsapp», а кнопка автозапуска на Xiaomi и Huawei
-        не показывается вовсе, потому что resolveActivity() возвращает null.
-
-        Намеренно НЕ используется QUERY_ALL_PACKAGES: F-Droid и IzzyOnDroid помечают его
-        как anti-feature, а intent на launcher-активность закрывает ту же задачу —
-        видны все приложения со значком в меню, то есть ровно те, чьи уведомления
-        человек может увидеть.
-    -->
+    <!-- Без этого блока на Android 11+ чужие пакеты не видны: в журнале вместо
+         «WhatsApp» будет com.whatsapp, а кнопка автозапуска не появится вовсе.
+         QUERY_ALL_PACKAGES не берём — F-Droid считает его anti-feature. -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
 
-        <!-- Экраны автозапуска прошивок: у них нет launcher-активности,
-             поэтому нужны поимённо. Список синхронизирован с KeepAlive.VENDOR_SCREENS. -->
+        <!-- Экраны автозапуска прошивок, у них нет launcher-активности.
+             Список должен совпадать с KeepAlive.VENDOR_SCREENS. -->
         <package android:name="com.miui.securitycenter" />
         <package android:name="com.huawei.systemmanager" />
         <package android:name="com.coloros.safecenter" />

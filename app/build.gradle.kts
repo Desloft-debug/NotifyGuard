@@ -12,22 +12,20 @@ android {
         applicationId = "com.guard.notifyguard"
         minSdk = 29
         targetSdk = 34
-        versionCode = 15
-        versionName = "3.1"
+        versionCode = 16
+        versionName = "3.2"
 
-        // Репозиторий, откуда берутся обновления, онлайн-словарь и куда уходят issue.
-        // Должен совпадать с `git remote get-url origin`: если сменится имя аккаунта,
-        // а здесь останется старое, приложение продолжит ходить на старый репозиторий
-        // и не увидит ни новых релизов, ни правок словаря.
+        // Репозиторий для обновлений, онлайн-словаря и issue.
+        // Сменится имя аккаунта — поменять и тут, иначе приложение будет ходить
+        // на старый адрес и молчать про новые релизы.
         buildConfigField("String", "GITHUB_OWNER", "\"Desloft-debug\"")
         buildConfigField("String", "GITHUB_REPO", "\"NotifyGuard\"")
 
-        // В APK попадают только нужные локали
+        // тащить в APK локали AndroidX незачем
         resourceConfigurations += setOf("en", "ru")
     }
 
-    // IzzyOnDroid и F-Droid не принимают APK с зашифрованным блоком
-    // метаданных зависимостей: прочитать его может только Google.
+    // IzzyOnDroid и F-Droid не берут APK с зашифрованным блоком метаданных
     dependenciesInfo {
         includeInApk = false
         includeInBundle = false
@@ -47,8 +45,6 @@ android {
 
     buildTypes {
         release {
-            // Убирает неиспользуемый код и ресурсы: меньше APK,
-            // меньше классов на загрузку при старте
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
@@ -88,10 +84,8 @@ android {
 
     testOptions {
         unitTests {
-            // Тесты в app/src/test не трогают Android: словари, границы слов,
-            // сравнение версий и разбор номера — чистый Kotlin, Robolectric не нужен.
-            // Флаг на случай, если тест всё же дотянется до заглушки android.jar:
-            // она вернёт значение по умолчанию вместо RuntimeException("Stub!").
+            // тесты Android не трогают, но если кто-то дотянется до заглушки —
+            // пусть вернёт дефолт, а не RuntimeException("Stub!")
             isReturnDefaultValues = true
         }
     }

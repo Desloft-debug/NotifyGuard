@@ -17,13 +17,12 @@ data class RemoteDict(
     val isEmpty: Boolean get() = block.isEmpty() && allow.isEmpty()
 }
 
-// Словарь, который лежит в репозитории и обновляется без выпуска новой версии.
+// Словарь из репозитория: правится без выпуска новой версии приложения.
 object RemoteDictionary {
 
     private const val URL_TEMPLATE =
         "https://raw.githubusercontent.com/%s/%s/main/dictionary.json"
 
-    /** Потолок на итоговый список, а не на отдельный массив в файле. */
     private const val MAX_WORDS = 3000
     private const val MIN_LEN = 3
     private const val MAX_LEN = 40
@@ -34,31 +33,23 @@ object RemoteDictionary {
         String.format(URL_TEMPLATE, BuildConfig.GITHUB_OWNER, BuildConfig.GITHUB_REPO)
 
     private val PROTECTED_WORDS: Set<String> by lazy {
-        (FilterRules.EMERGENCY_WORDS +
-            FilterRules.SYSTEM_WORDS +
-            FilterRules.CODE_WORDS +
-            FilterRules.MONEY_WORDS +
-            FilterRules.DELIVERY_WORDS).toSet()
+        (Dictionaries.EMERGENCY +
+            Dictionaries.SYSTEM +
+            Dictionaries.CODE +
+            Dictionaries.MONEY +
+            Dictionaries.DELIVERY).toSet()
     }
 
     fun shouldSync(prefs: Prefs): Boolean =
         prefs.remoteDictEnabled &&
             System.currentTimeMillis() - prefs.remoteDictFetched > DAY_MS
 
-    /*
-     * Раньше эта функция называлась cached(), но кеша в ней не было: каждый вызов
-     * заново разбирал весь JSON. Вызывается она из Prefs.snapshot(), то есть не реже
-     * раза в пять секунд, пока идут уведомления, в главном потоке слушателя.
-     *
-     * Ключ — длина и хеш строки плюс регион. Полное сравнение строки на 512 КБ
-     * на каждое уведомление было бы не сильно дешевле разбора. Коллизия хеша
-     * теоретически возможна, и последствие у неё безобидное: словарь останется
-     * прежним до следующей синхронизации.
-     */
+    // Ключ разбора: длина + хеш json и регион. Сравнивать строку на 512 КБ целиком
+    // на каждое уведомление смысла нет, а коллизия хеша безобидна — словарь просто
+    // останется прежним до следующей синхронизации.
     private data class MemoKey(val length: Int, val hash: Int, val region: Region)
 
-    // Объявлено до memo: в object-е инициализаторы выполняются сверху вниз,
-    // и ссылка на ещё не созданное свойство дала бы null.
+    // объявляем раньше memo: инициализаторы в object идут сверху вниз
     private val EMPTY = RemoteDict(0, "", emptyList(), emptyList())
 
     @Volatile
@@ -108,8 +99,6 @@ object RemoteDictionary {
                     "HTTP ${conn.responseCode}"
                 }
 
-                // Раньше тело читалось целиком, и только потом проверялась длина —
-                // как защита от большого файла это не работало.
                 val body = readLimited(conn)
 
                 val json = JSONObject(body)
@@ -141,7 +130,7 @@ object RemoteDictionary {
         return out.toString(Charsets.UTF_8.name())
     }
 
-    // Файл может содержать общие списки block/allow и разделы по регионам.
+    // В файле есть общие списки block/allow и разделы по регионам.
     private fun parse(json: JSONObject, region: Region): RemoteDict {
         val sections = when (region) {
             Region.RU -> listOf("ru")
@@ -159,9 +148,8 @@ object RemoteDictionary {
             allow += words(sec.optJSONArray("allow"))
         }
 
-        // MAX_WORDS применяется к итогу. Раньше он стоял только внутри words(),
-        // то есть к одному массиву из шести, и фактический потолок был 18 000 слов —
-        // столько же полных проходов по тексту на каждое уведомление.
+        // Потолок именно на итог: в файле шесть массивов, и лимит на каждый
+        // из них по отдельности дал бы 18 000 слов на проход по тексту.
         return RemoteDict(
             version = json.optInt("version", 0),
             updated = json.optString("updated"),

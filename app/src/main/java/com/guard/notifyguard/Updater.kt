@@ -22,14 +22,13 @@ data class ReleaseInfo(
     val apkUrl: String,
     val sizeBytes: Long,
     /**
-     * SHA-256 файла в нижнем регистре, если он указан в тексте релиза.
-     * Публикуется workflow-ом релиза (см. 2-качество.md). Пусто — проверка пропускается,
-     * подпись APK всё равно сверяется.
+     * SHA-256 в нижнем регистре, если он есть в тексте релиза (его пишет release.yml).
+     * Пусто — сумму не проверяем, подпись APK сверяется в любом случае.
      */
     val sha256: String = ""
 )
 
-// Проверка обновлений через публичный API GitHub.
+// Обновление через публичный API GitHub, без токена.
 object Updater {
 
     private const val API =
@@ -40,11 +39,8 @@ object Updater {
     private const val MAX_APK_BYTES = 64L * 1024 * 1024
     private const val MAX_REDIRECTS = 5
 
-    /**
-     * Ссылка на APK берётся из JSON и раньше открывалась как есть — без проверки хоста
-     * и без проверки кода ответа. Теперь каждый переход проверяется отдельно,
-     * поэтому редиректы обрабатываются вручную.
-     */
+    // Ссылка на APK приходит из json, так что хост проверяем на каждом шаге —
+    // включая редиректы, отсюда и ручной их разбор в open().
     private val ALLOWED_HOSTS = setOf(
         "github.com",
         "api.github.com",
@@ -67,12 +63,10 @@ object Updater {
                 it.setRequestProperty("Accept", "application/vnd.github+json")
             }
             val body = conn.use { c ->
-                // Проверка кода ответа раньше отсутствовала вовсе. У GitHub API без токена
-                // лимит 60 запросов в час на IP — на общем Wi-Fi он выбирается легко,
-                // и пользователь должен понимать, что это лимит, а не «нет интернета».
+                // 403 у GitHub без токена — это лимит 60 запросов в час на IP,
+                // на общем Wi-Fi выбирается влёгкую.
                 require(c.responseCode == HttpURLConnection.HTTP_OK) {
-                    if (c.responseCode == 403) "Лимит запросов GitHub, попробуйте позже"
-                    else "HTTP ${c.responseCode}"
+                    if (c.responseCode == 403) "rate limited" else "HTTP ${c.responseCode}"
                 }
                 readLimited(c, MAX_JSON_BYTES)
             }
@@ -95,8 +89,8 @@ object Updater {
                     }
                 }
             }
-            require(tag.isNotBlank() && url.isNotBlank()) { "В релизе нет APK" }
-            require(isAllowed(URL(url))) { "Ссылка на APK ведёт за пределы GitHub" }
+            require(tag.isNotBlank() && url.isNotBlank()) { "no apk in release" }
+            require(isAllowed(URL(url))) { "apk url is not on github" }
 
             ReleaseInfo(
                 tag = tag,
@@ -109,7 +103,7 @@ object Updater {
         }
     }
 
-    /** Ищет в тексте релиза строку вида "sha256: <64 hex>". Регистр и разделитель свободные. */
+    /** Ищет в описании релиза "sha256: <64 hex>", регистр и разделитель любые. */
     private fun findSha256(body: String): String =
         Regex("sha-?256[^0-9a-f]{0,4}([0-9a-fA-F]{64})", RegexOption.IGNORE_CASE)
             .find(body)?.groupValues?.get(1)?.lowercase().orEmpty()
@@ -126,15 +120,8 @@ object Updater {
         return false
     }
 
-    /**
-     * "v3.1-beta2" -> [3, 1]. Раньше суффикс выбрасывался через mapNotNull,
-     * и "3.1-beta" схлопывалось в [3]: версия 3.1-beta считалась равной 3.0
-     * и обновление молча не предлагалось. Теперь суффикс отрезается явно,
-     * и номер разбирается так, как его читает человек.
-     *
-     * На практике GitHub в releases/latest пре-релизы не отдаёт, так что это
-     * важно только для ручных тегов — но молча ошибаться всё равно не надо.
-     */
+    // "v3.1-beta2" -> [3, 1]. Суффикс отрезаем целиком: иначе "3.1-beta"
+    // превращается в [3] и выглядит как 3.0.
     private fun parseVersion(v: String): List<Int> {
         val core = v.removePrefix("v").substringBefore('-').substringBefore('+')
         val out = ArrayList<Int>(4)
@@ -151,7 +138,7 @@ object Updater {
         onProgress: (Float) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         runCatching {
-            require(isAllowed(URL(info.apkUrl))) { "Ссылка на APK ведёт за пределы GitHub" }
+            require(isAllowed(URL(info.apkUrl))) { "apk url is not on github" }
 
             val dir = File(context.cacheDir, "updates").apply {
                 deleteRecursively()
@@ -167,7 +154,7 @@ object Updater {
                 require(c.responseCode == HttpURLConnection.HTTP_OK) { "HTTP ${c.responseCode}" }
 
                 val total = if (info.sizeBytes > 0) info.sizeBytes else c.contentLength.toLong()
-                require(total <= MAX_APK_BYTES) { "Файл слишком большой" }
+                require(total <= MAX_APK_BYTES) { "apk too big" }
 
                 c.inputStream.use { input ->
                     file.outputStream().use { output ->
@@ -178,11 +165,11 @@ object Updater {
                             val read = input.read(buffer)
                             if (read <= 0) break
                             done += read
-                            require(done <= MAX_APK_BYTES) { "Файл слишком большой" }
+                            require(done <= MAX_APK_BYTES) { "apk too big" }
                             output.write(buffer, 0, read)
 
-                            // Раньше колбэк дёргался на каждые 16 КБ — для десятимегабайтного
-                            // APK это несколько сотен записей в состояние Compose подряд.
+                            // не чаще 10 раз в секунду, иначе Compose захлёбывается
+                            // на каждом прочитанном куске
                             val now = System.currentTimeMillis()
                             if (total > 0 && now - lastReported >= 100) {
                                 lastReported = now
@@ -192,22 +179,20 @@ object Updater {
                     }
                 }
             }
-            require(file.length() > 0) { "Пустой файл" }
+            require(file.length() > 0) { "empty file" }
             onProgress(1f)
 
             if (info.sha256.isNotBlank()) {
-                require(sha256(file) == info.sha256) { "Контрольная сумма не совпала" }
+                require(sha256(file) == info.sha256) { "checksum mismatch" }
             }
             file
         }
     }
 
     /**
-     * Сверяет сертификат скачанного APK с сертификатом установленного приложения.
-     *
-     * Android откажется ставить чужую подпись поверх нашей и сам, но узнает об этом
-     * пользователь уже в диалоге установщика — после того как выдал право ставить
-     * пакеты и потратил трафик. Проверить дешевле и честнее до показа установщика.
+     * Сверяет подпись скачанного APK с подписью установленного приложения.
+     * Система откажет и сама, но уже в диалоге установщика — после выданного
+     * разрешения и потраченного трафика.
      */
     fun signatureMatches(context: Context, file: File): Boolean {
         val result = runCatching {
@@ -233,8 +218,7 @@ object Updater {
 
     private fun signerDigests(info: SigningInfo?): Set<String> {
         if (info == null) return emptySet()
-        // signingCertificateHistory учитывает ротацию ключа, apkContentsSigners —
-        // случай, когда подписантов несколько.
+        // history — на случай ротации ключа, apkContentsSigners — если подписантов несколько
         val certs = if (info.hasMultipleSigners()) info.apkContentsSigners
         else info.signingCertificateHistory
         return certs?.mapNotNull { runCatching { sha256(it.toByteArray()) }.getOrNull() }
@@ -284,10 +268,8 @@ object Updater {
     fun releasesPageUrl(): String =
         "https://github.com/${BuildConfig.GITHUB_OWNER}/${BuildConfig.GITHUB_REPO}/releases"
 
-    /**
-     * Открывает соединение, следуя редиректам вручную и проверяя хост на каждом шаге.
-     * Автоматический instanceFollowRedirects этого не позволяет.
-     */
+    // Редиректы разбираем сами: instanceFollowRedirects не даёт проверить хост
+    // на промежуточных переходах.
     private fun open(
         start: URL,
         configure: (HttpURLConnection) -> Unit = {}
@@ -295,7 +277,7 @@ object Updater {
         var url = start
         var hops = 0
         while (true) {
-            require(isAllowed(url)) { "Недопустимый адрес: ${url.host}" }
+            require(isAllowed(url)) { "host not allowed: ${url.host}" }
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 10_000
@@ -309,8 +291,8 @@ object Updater {
 
             val location = conn.getHeaderField("Location")
             conn.disconnect()
-            require(!location.isNullOrBlank()) { "Редирект без адреса" }
-            require(++hops <= MAX_REDIRECTS) { "Слишком много перенаправлений" }
+            require(!location.isNullOrBlank()) { "redirect without location" }
+            require(++hops <= MAX_REDIRECTS) { "too many redirects" }
             url = URL(url, location)
         }
     }
@@ -322,7 +304,7 @@ object Updater {
             while (true) {
                 val n = input.read(buf)
                 if (n <= 0) break
-                require(out.size() + n <= limit) { "Ответ слишком большой" }
+                require(out.size() + n <= limit) { "response too big" }
                 out.write(buf, 0, n)
             }
         }
